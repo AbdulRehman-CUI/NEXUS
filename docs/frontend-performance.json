@@ -1,0 +1,94 @@
+{
+  "before": {
+    "metrics": {
+      "longTasks": [],
+      "cls": 0
+    },
+    "jsEncodedBytes": 158955,
+    "loadedScriptCount": 11,
+    "chromium": [
+      {
+        "name": "Nodes",
+        "value": 296
+      },
+      {
+        "name": "LayoutCount",
+        "value": 0
+      },
+      {
+        "name": "RecalcStyleCount",
+        "value": 0
+      },
+      {
+        "name": "JSHeapUsedSize",
+        "value": 5889704
+      }
+    ],
+    "apiRequests": [
+      "/api/auth/me",
+      "/api/workspaces",
+      "/api/settings/public",
+      "/api/workspaces/:id/documents",
+      "/api/workspaces/:id/chats",
+      "/api/workspaces/:id/route-policy",
+      "/api/workspaces/:id/retrieval-settings",
+      "/api/workspaces/:id/vaults",
+      "/api/workspaces/:id/documents",
+      "/api/workspaces/:id/documents",
+      "/api/workspaces/:id/documents",
+      "/api/workspaces/:id/documents",
+      "/api/workspaces/:id/documents"
+    ],
+    "documentRequests": 6,
+    "conditions": {
+      "viewport": "1440x1000",
+      "idleObservationMs": 10000,
+      "headless": true,
+      "note": "One cold page in installed Chromium, synthetic fixture; not a general FPS or load benchmark."
+    }
+  },
+  "after": {
+    "metrics": {
+      "longTasks": [],
+      "cls": 0
+    },
+    "jsEncodedBytes": 187728,
+    "loadedScriptCount": 14,
+    "chromium": [
+      {
+        "name": "Nodes",
+        "value": 463
+      },
+      {
+        "name": "LayoutCount",
+        "value": 0
+      },
+      {
+        "name": "RecalcStyleCount",
+        "value": 0
+      },
+      {
+        "name": "JSHeapUsedSize",
+        "value": 5534180
+      }
+    ],
+    "apiRequests": [
+      "/api/auth/me",
+      "/api/workspaces",
+      "/api/settings/public",
+      "/api/workspaces/:id/documents",
+      "/api/workspaces/:id/chats",
+      "/api/workspaces/:id/route-policy",
+      "/api/workspaces/:id/retrieval-settings",
+      "/api/workspaces/:id/vaults"
+    ],
+    "documentRequests": 1,
+    "conditions": {
+      "viewport": "1440x1000",
+      "idleObservationMs": 10000,
+      "headless": true,
+      "note": "One cold page in installed Chromium, synthetic fixture; not a general FPS or load benchmark."
+    }
+  },
+  "scope": "Single cold production home load; installed headless Chromium, 1440x1000, 10 seconds idle, isolated local fixture. Not a generalized FPS/load result."
+}

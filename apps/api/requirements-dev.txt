@@ -1,0 +1,6 @@
+-r requirements.txt
+pytest==9.2.0
+ruff==0.17.3
+mypy==1.19.1
+pathspec==1.1.1
+librt==0.16.0

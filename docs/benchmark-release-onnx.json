@@ -1,0 +1,43 @@
+{
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+    "python": "3.12.14"
+  },
+  "documents": 100,
+  "embedding_provider": "onnx",
+  "isolated_extraction": true,
+  "ingestion_seconds": 134.58,
+  "documents_per_second": 0.743,
+  "active_chunks": 200,
+  "data_bytes_excluding_model_cache": 3980891,
+  "rss_bytes": {
+    "before": 179326976,
+    "after_ingestion": 299896832,
+    "after_warm_queries": 335044608
+  },
+  "retrieval": {
+    "semantic": {
+      "first_query_ms": 367.58,
+      "warm_median_ms": 58.69,
+      "warm_p95_ms": 95.77,
+      "repetitions": 10
+    },
+    "keyword": {
+      "first_query_ms": 59.42,
+      "warm_median_ms": 60.24,
+      "warm_p95_ms": 78.14,
+      "repetitions": 10
+    },
+    "hybrid": {
+      "first_query_ms": 107.65,
+      "warm_median_ms": 87.35,
+      "warm_p95_ms": 101.66,
+      "repetitions": 10
+    }
+  },
+  "mock_chat_total_ms": 140.62,
+  "time_to_first_token_ms": null,
+  "total_seconds": 138.441,
+  "limitations": "One sequential synthetic run; query first observation follows restart, semantic includes model load; warm p95 is maximum of ten observations. Not a throughput/memory capacity guarantee, no live model generation."
+}

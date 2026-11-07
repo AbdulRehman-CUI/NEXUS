@@ -1,0 +1,17 @@
+{
+  "dataset_version": "release-v2",
+  "known_answer_cases": 1,
+  "citation_ids_checked": 3,
+  "citation_id_validity": 1.0,
+  "citation_coverage": {
+    "retrieved": 3,
+    "cited": 3,
+    "unknown_ids": 0,
+    "note": "Source identity is verified; claim entailment is not guaranteed."
+  },
+  "controlled_abstention_cases": 2,
+  "controlled_abstention_passed": 2,
+  "provider": "mock",
+  "external_evaluator_calls": 0,
+  "limitations": "Controlled no-hit/empty cases only. Unsupported natural-language questions may retrieve irrelevant passages. Mock formatting/source validity does not establish real LLM factual accuracy or entailment."
+}

@@ -1,0 +1,3 @@
+-r requirements.txt
+# Optional PyTorch-based embedding/reranking runtime. Install a CPU torch wheel first.
+sentence-transformers==6.2.0

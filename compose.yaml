@@ -1,0 +1,65 @@
+name: nexus
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    init: true
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      NEXUS_DATA_DIR: /app/data
+      NEXUS_PROFILE: server
+      # Loopback-published HTTP demo only. TLS server overrides must set true.
+      NEXUS_SECURE_COOKIES: "false"
+      NEXUS_GENERATION_PROVIDER: mock
+      NEXUS_EMBEDDING_PROVIDER: onnx
+      NEXUS_CORS_ORIGINS: '["http://127.0.0.1:3000"]'
+      NEXUS_ALLOWED_HOSTS: '["127.0.0.1","localhost"]'
+    volumes: ["nexus-data:/app/data"]
+    cpus: 2
+    mem_limit: 2g
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000}
+    init: true
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on:
+      api:
+        condition: service_healthy
+    cpus: 1
+    mem_limit: 512m
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+  ollama:
+    image: ollama/ollama:0.24.0
+    profiles: [local-llm]
+    # Explicit optional profile shares only the API network namespace, keeping literal loopback routing.
+    network_mode: service:api
+    depends_on: [api]
+    volumes: ["ollama-models:/root/.ollama"]
+    environment:
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_NUM_PARALLEL: 1
+    cpus: 2
+    mem_limit: 4g
+volumes:
+  nexus-data:
+  ollama-models:

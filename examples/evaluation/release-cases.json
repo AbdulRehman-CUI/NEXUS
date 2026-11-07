@@ -1,0 +1,15 @@
+{
+  "version": "release-v2",
+  "retrieval_labels": "questions.json",
+  "additional_scenarios": [
+    {"id": "empty-workspace", "expect": "insufficient evidence; no generation call; zero citations"},
+    {"id": "unsupported-keyword-nonce", "expect": "insufficient evidence; zero lexical hits and zero citations"},
+    {"id": "known-answer-mock", "expect": "server citation IDs open stored authorized source substrings; extractive output is not claim synthesis"},
+    {"id": "changed-note", "expect": "old citation becomes unavailable; replacement searchable"},
+    {"id": "deleted-note", "expect": "source unavailable; no retrieval or graph node"},
+    {"id": "mixed-users", "expect": "user B gets 404 for user A direct IDs, sources, graph, search filters and jobs"},
+    {"id": "hostile-content", "expect": "document text stays quoted user evidence; provider/system policy cannot be changed"}
+  ],
+  "tests": ["test_release_operations.py", "test_auth.py", "test_phase2_integrity.py", "test_vaults.py", "test_gateway.py"],
+  "note": "Retrieval quality metrics come from the fixed source labels; transition/security expectations are separately executable regressions, not additional recall samples."
+}

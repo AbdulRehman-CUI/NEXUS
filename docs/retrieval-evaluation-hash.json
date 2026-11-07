@@ -1,0 +1,838 @@
+{
+  "corpus_version": "synthetic-v1",
+  "provider": "hash",
+  "model": "sha256-token-hash-384",
+  "semantic_quality_claim": false,
+  "k": 3,
+  "question_count": 12,
+  "hardware": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64",
+    "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+    "python": "3.12.14"
+  },
+  "elapsed_seconds": 4.136,
+  "results": {
+    "semantic": {
+      "recall_at_k": 0.95,
+      "mrr": 0.9,
+      "answerable_cases": 10,
+      "unsupported_cases_with_hits": 2,
+      "elapsed_ms": 1160.73,
+      "cases": [
+        {
+          "id": "exact-code",
+          "relevant_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4"
+          ],
+          "retrieved_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625",
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416"
+          ],
+          "retrieved_chunk_ids": [
+            "2c538ea2c849507c6d8476e6505569831547f804e456f98a4413c81c626b7bb8",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e",
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "phrase",
+          "relevant_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4"
+          ],
+          "retrieved_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4",
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625"
+          ],
+          "retrieved_chunk_ids": [
+            "2c538ea2c849507c6d8476e6505569831547f804e456f98a4413c81c626b7bb8",
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "leave-paraphrase",
+          "relevant_source_ids": [
+            "bce80007de7f161829bb3fd7e3720d14dfcdf267b5f4ccb3f30453f4f1ca75d7"
+          ],
+          "retrieved_source_ids": [
+            "bce80007de7f161829bb3fd7e3720d14dfcdf267b5f4ccb3f30453f4f1ca75d7",
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625"
+          ],
+          "retrieved_chunk_ids": [
+            "dd3d21e1bda4151cf7ee1f019d2bf99eccd1c0874b55a59c5d5e6117ea79da9a",
+            "8963a0d5f92ae22f5c51d93e7a6e5cfc885df6435d9a61d2f0545bec1d02d96c",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "backup-retention",
+          "relevant_source_ids": [
+            "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251"
+          ],
+          "retrieved_source_ids": [
+            "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251",
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe",
+            "5818592d1f45a196225e7c0bc5acdc3b7b825aff9451af32972e0e4e07aab175"
+          ],
+          "retrieved_chunk_ids": [
+            "3ca591b9380c8ccc7c5f6b3db9c1b95ca3881a44bb8e4371f54ad903630e922f",
+            "8963a0d5f92ae22f5c51d93e7a6e5cfc885df6435d9a61d2f0545bec1d02d96c",
+            "b461d9243c6834a0dd4e27aa47a769859e3a92c6ff7e5e0d2e5354802c7c561d"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "restore-objective",
+          "relevant_source_ids": [
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416"
+          ],
+          "retrieved_source_ids": [
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416",
+            "986c20282749c2f3cfe58013fa5299886931ac8e45c27112b19ade306c469334",
+            "ef874de25021b4d67f6962cd89c625d6e9670e28baffe84a2392291dcf4e5659"
+          ],
+          "retrieved_chunk_ids": [
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba",
+            "ae82c5c3d367bc6ac95a25b7b1e5c4b1b7a53c6cccd746a5578332411a173f80",
+            "9af4f19dd248f52e15025305bfd43656379352ae4b683e55b1341f802b937151"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "cache-term",
+          "relevant_source_ids": [
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558"
+          ],
+          "retrieved_source_ids": [
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625",
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1"
+          ],
+          "retrieved_chunk_ids": [
+            "0f87cac545e43b3ba18cce39dda6af58b4a73a6216ec4cf2934a802acbe81ebd",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e",
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "aurora-multiple",
+          "relevant_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_source_ids": [
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65",
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "82d07ee9c292106d37e5ecb92d527bdce1385e18b591e2e79fa726da746569aa"
+          ],
+          "retrieved_chunk_ids": [
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea",
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "34da513a3fe0c7c4de80ffc07d5a4ca771ac5312325d9091c781c7c2cdf42c11"
+          ],
+          "recall_at_k": 0.5,
+          "reciprocal_rank": 0.5
+        },
+        {
+          "id": "owner",
+          "relevant_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1"
+          ],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea",
+            "459e78ffc74fd9483ab4a41444b0ee16b0e99c561b5e5084175345b4a9c88ddb"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "review",
+          "relevant_source_ids": [
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6",
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "459e78ffc74fd9483ab4a41444b0ee16b0e99c561b5e5084175345b4a9c88ddb",
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 0.5
+        },
+        {
+          "id": "adversarial",
+          "relevant_source_ids": [
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe"
+          ],
+          "retrieved_source_ids": [
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe",
+            "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251",
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4"
+          ],
+          "retrieved_chunk_ids": [
+            "8963a0d5f92ae22f5c51d93e7a6e5cfc885df6435d9a61d2f0545bec1d02d96c",
+            "3ca591b9380c8ccc7c5f6b3db9c1b95ca3881a44bb8e4371f54ad903630e922f",
+            "2c538ea2c849507c6d8476e6505569831547f804e456f98a4413c81c626b7bb8"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "unsupported-election",
+          "relevant_source_ids": [],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558",
+            "82d07ee9c292106d37e5ecb92d527bdce1385e18b591e2e79fa726da746569aa"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "0f87cac545e43b3ba18cce39dda6af58b4a73a6216ec4cf2934a802acbe81ebd",
+            "34da513a3fe0c7c4de80ffc07d5a4ca771ac5312325d9091c781c7c2cdf42c11"
+          ],
+          "recall_at_k": null,
+          "reciprocal_rank": null
+        },
+        {
+          "id": "unsupported-planet",
+          "relevant_source_ids": [],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558",
+            "82d07ee9c292106d37e5ecb92d527bdce1385e18b591e2e79fa726da746569aa"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "0f87cac545e43b3ba18cce39dda6af58b4a73a6216ec4cf2934a802acbe81ebd",
+            "34da513a3fe0c7c4de80ffc07d5a4ca771ac5312325d9091c781c7c2cdf42c11"
+          ],
+          "recall_at_k": null,
+          "reciprocal_rank": null
+        }
+      ]
+    },
+    "keyword": {
+      "recall_at_k": 1.0,
+      "mrr": 0.95,
+      "answerable_cases": 10,
+      "unsupported_cases_with_hits": 2,
+      "elapsed_ms": 596.8,
+      "cases": [
+        {
+          "id": "exact-code",
+          "relevant_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4"
+          ],
+          "retrieved_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625",
+            "f6954886140a1197a93a5fadeab9cd3e06137467d0e14423597db695d32c50b4"
+          ],
+          "retrieved_chunk_ids": [
+            "2c538ea2c849507c6d8476e6505569831547f804e456f98a4413c81c626b7bb8",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e",
+            "675eca6bd1b8fa61617e25e4cc62fb7cc02a5c2bb54da89ca7d9b31d8928a475"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "phrase",
+          "relevant_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4"
+          ],
+          "retrieved_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4"
+          ],
+          "retrieved_chunk_ids": [
+            "2c538ea2c849507c6d8476e6505569831547f804e456f98a4413c81c626b7bb8"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "leave-paraphrase",
+          "relevant_source_ids": [
+            "bce80007de7f161829bb3fd7e3720d14dfcdf267b5f4ccb3f30453f4f1ca75d7"
+          ],
+          "retrieved_source_ids": [
+            "bce80007de7f161829bb3fd7e3720d14dfcdf267b5f4ccb3f30453f4f1ca75d7"
+          ],
+          "retrieved_chunk_ids": [
+            "dd3d21e1bda4151cf7ee1f019d2bf99eccd1c0874b55a59c5d5e6117ea79da9a"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "backup-retention",
+          "relevant_source_ids": [
+            "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251"
+          ],
+          "retrieved_source_ids": [
+            "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251"
+          ],
+          "retrieved_chunk_ids": [
+            "3ca591b9380c8ccc7c5f6b3db9c1b95ca3881a44bb8e4371f54ad903630e922f"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "restore-objective",
+          "relevant_source_ids": [
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416"
+          ],
+          "retrieved_source_ids": [
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416",
+            "986c20282749c2f3cfe58013fa5299886931ac8e45c27112b19ade306c469334",
+            "ef874de25021b4d67f6962cd89c625d6e9670e28baffe84a2392291dcf4e5659"
+          ],
+          "retrieved_chunk_ids": [
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba",
+            "ae82c5c3d367bc6ac95a25b7b1e5c4b1b7a53c6cccd746a5578332411a173f80",
+            "9af4f19dd248f52e15025305bfd43656379352ae4b683e55b1341f802b937151"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "cache-term",
+          "relevant_source_ids": [
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558"
+          ],
+          "retrieved_source_ids": [
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558",
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416",
+            "ef874de25021b4d67f6962cd89c625d6e9670e28baffe84a2392291dcf4e5659"
+          ],
+          "retrieved_chunk_ids": [
+            "0f87cac545e43b3ba18cce39dda6af58b4a73a6216ec4cf2934a802acbe81ebd",
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba",
+            "9af4f19dd248f52e15025305bfd43656379352ae4b683e55b1341f802b937151"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "aurora-multiple",
+          "relevant_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea",
+            "459e78ffc74fd9483ab4a41444b0ee16b0e99c561b5e5084175345b4a9c88ddb"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "owner",
+          "relevant_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1"
+          ],
+          "retrieved_source_ids": [
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6",
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65"
+          ],
+          "retrieved_chunk_ids": [
+            "459e78ffc74fd9483ab4a41444b0ee16b0e99c561b5e5084175345b4a9c88ddb",
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 0.5
+        },
+        {
+          "id": "review",
+          "relevant_source_ids": [
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_source_ids": [
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6",
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65"
+          ],
+          "retrieved_chunk_ids": [
+            "459e78ffc74fd9483ab4a41444b0ee16b0e99c561b5e5084175345b4a9c88ddb",
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "adversarial",
+          "relevant_source_ids": [
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe"
+          ],
+          "retrieved_source_ids": [
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe",
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1"
+          ],
+          "retrieved_chunk_ids": [
+            "8963a0d5f92ae22f5c51d93e7a6e5cfc885df6435d9a61d2f0545bec1d02d96c",
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "unsupported-election",
+          "relevant_source_ids": [],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416",
+            "ef874de25021b4d67f6962cd89c625d6e9670e28baffe84a2392291dcf4e5659"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba",
+            "9af4f19dd248f52e15025305bfd43656379352ae4b683e55b1341f802b937151"
+          ],
+          "recall_at_k": null,
+          "reciprocal_rank": null
+        },
+        {
+          "id": "unsupported-planet",
+          "relevant_source_ids": [],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "bce80007de7f161829bb3fd7e3720d14dfcdf267b5f4ccb3f30453f4f1ca75d7",
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "dd3d21e1bda4151cf7ee1f019d2bf99eccd1c0874b55a59c5d5e6117ea79da9a",
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba"
+          ],
+          "recall_at_k": null,
+          "reciprocal_rank": null
+        }
+      ]
+    },
+    "hybrid": {
+      "recall_at_k": 1.0,
+      "mrr": 0.95,
+      "answerable_cases": 10,
+      "unsupported_cases_with_hits": 2,
+      "elapsed_ms": 937.79,
+      "cases": [
+        {
+          "id": "exact-code",
+          "relevant_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4"
+          ],
+          "retrieved_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625",
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416"
+          ],
+          "retrieved_chunk_ids": [
+            "2c538ea2c849507c6d8476e6505569831547f804e456f98a4413c81c626b7bb8",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e",
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "phrase",
+          "relevant_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4"
+          ],
+          "retrieved_source_ids": [
+            "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4",
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625"
+          ],
+          "retrieved_chunk_ids": [
+            "2c538ea2c849507c6d8476e6505569831547f804e456f98a4413c81c626b7bb8",
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "leave-paraphrase",
+          "relevant_source_ids": [
+            "bce80007de7f161829bb3fd7e3720d14dfcdf267b5f4ccb3f30453f4f1ca75d7"
+          ],
+          "retrieved_source_ids": [
+            "bce80007de7f161829bb3fd7e3720d14dfcdf267b5f4ccb3f30453f4f1ca75d7",
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625"
+          ],
+          "retrieved_chunk_ids": [
+            "dd3d21e1bda4151cf7ee1f019d2bf99eccd1c0874b55a59c5d5e6117ea79da9a",
+            "8963a0d5f92ae22f5c51d93e7a6e5cfc885df6435d9a61d2f0545bec1d02d96c",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "backup-retention",
+          "relevant_source_ids": [
+            "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251"
+          ],
+          "retrieved_source_ids": [
+            "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251",
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe",
+            "5818592d1f45a196225e7c0bc5acdc3b7b825aff9451af32972e0e4e07aab175"
+          ],
+          "retrieved_chunk_ids": [
+            "3ca591b9380c8ccc7c5f6b3db9c1b95ca3881a44bb8e4371f54ad903630e922f",
+            "8963a0d5f92ae22f5c51d93e7a6e5cfc885df6435d9a61d2f0545bec1d02d96c",
+            "b461d9243c6834a0dd4e27aa47a769859e3a92c6ff7e5e0d2e5354802c7c561d"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "restore-objective",
+          "relevant_source_ids": [
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416"
+          ],
+          "retrieved_source_ids": [
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416",
+            "986c20282749c2f3cfe58013fa5299886931ac8e45c27112b19ade306c469334",
+            "ef874de25021b4d67f6962cd89c625d6e9670e28baffe84a2392291dcf4e5659"
+          ],
+          "retrieved_chunk_ids": [
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba",
+            "ae82c5c3d367bc6ac95a25b7b1e5c4b1b7a53c6cccd746a5578332411a173f80",
+            "9af4f19dd248f52e15025305bfd43656379352ae4b683e55b1341f802b937151"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "cache-term",
+          "relevant_source_ids": [
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558"
+          ],
+          "retrieved_source_ids": [
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558",
+            "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625",
+            "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416"
+          ],
+          "retrieved_chunk_ids": [
+            "0f87cac545e43b3ba18cce39dda6af58b4a73a6216ec4cf2934a802acbe81ebd",
+            "7d4c6217cf9b8f20cc4ce23490b5ecaea0676d9cadd9bfd642e923ee0391c25e",
+            "cabb5e21dbc82d5efedbdd31207fd31441b186288e4e22e9ec6f924498c112ba"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "aurora-multiple",
+          "relevant_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea",
+            "459e78ffc74fd9483ab4a41444b0ee16b0e99c561b5e5084175345b4a9c88ddb"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "owner",
+          "relevant_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1"
+          ],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6",
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "459e78ffc74fd9483ab4a41444b0ee16b0e99c561b5e5084175345b4a9c88ddb",
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "review",
+          "relevant_source_ids": [
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6"
+          ],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6",
+            "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "459e78ffc74fd9483ab4a41444b0ee16b0e99c561b5e5084175345b4a9c88ddb",
+            "6fc03fdf51a6579b92e8d5a9288bf6c9681522d7b3ce0663c205622d6b28feea"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 0.5
+        },
+        {
+          "id": "adversarial",
+          "relevant_source_ids": [
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe"
+          ],
+          "retrieved_source_ids": [
+            "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe",
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251"
+          ],
+          "retrieved_chunk_ids": [
+            "8963a0d5f92ae22f5c51d93e7a6e5cfc885df6435d9a61d2f0545bec1d02d96c",
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "3ca591b9380c8ccc7c5f6b3db9c1b95ca3881a44bb8e4371f54ad903630e922f"
+          ],
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "id": "unsupported-election",
+          "relevant_source_ids": [],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558",
+            "ef874de25021b4d67f6962cd89c625d6e9670e28baffe84a2392291dcf4e5659"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "0f87cac545e43b3ba18cce39dda6af58b4a73a6216ec4cf2934a802acbe81ebd",
+            "9af4f19dd248f52e15025305bfd43656379352ae4b683e55b1341f802b937151"
+          ],
+          "recall_at_k": null,
+          "reciprocal_rank": null
+        },
+        {
+          "id": "unsupported-planet",
+          "relevant_source_ids": [],
+          "retrieved_source_ids": [
+            "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+            "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558",
+            "ef874de25021b4d67f6962cd89c625d6e9670e28baffe84a2392291dcf4e5659"
+          ],
+          "retrieved_chunk_ids": [
+            "40216a10e3678ff113e0d13cb395bf7a257bd21d4e547f6bb42c977b612b1984",
+            "0f87cac545e43b3ba18cce39dda6af58b4a73a6216ec4cf2934a802acbe81ebd",
+            "9af4f19dd248f52e15025305bfd43656379352ae4b683e55b1341f802b937151"
+          ],
+          "recall_at_k": null,
+          "reciprocal_rank": null
+        }
+      ]
+    }
+  },
+  "source_mapping": [
+    {
+      "source_id": "853f4a73ec922227f1ab1c538220cd4b8594b8869b08770ac8e1578ccad6f625",
+      "source_span_id": "f5182383cda643117496bea6c1901d1261a0ab9a2471873576e45faf42d4a23a",
+      "document_id": "fbeebd24-2b3a-49f7-8609-cfa2df6a4f02",
+      "document_version_id": "bdeb46a3-2fc0-43aa-aec4-1fcad144fb17",
+      "path": "manual.pdf",
+      "page": 1,
+      "heading": null
+    },
+    {
+      "source_id": "533545bbc9071891b8cfbdd651d2908535575fc77e5d390fc6f8fe0ac5371416",
+      "source_span_id": "00d06bc48032fb2c23480afe6971712c5bec75b400fbbefe62505118e0aac483",
+      "document_id": "fbeebd24-2b3a-49f7-8609-cfa2df6a4f02",
+      "document_version_id": "bdeb46a3-2fc0-43aa-aec4-1fcad144fb17",
+      "path": "manual.pdf",
+      "page": 2,
+      "heading": null
+    },
+    {
+      "source_id": "28324f29dd6490691c4531e80981f541d2d758a358cf7e7dde3723c05a633dbe",
+      "source_span_id": "18227ff4bacfd8b8e8203145ed3d0aa294756c7804808e8e0898f837f9942cc3",
+      "document_id": "e748ca38-ee9c-4ffc-90a9-72b45a282b2c",
+      "document_version_id": "64e74c7e-3a91-435e-aba0-320ede878ebc",
+      "path": "Adversarial.md",
+      "page": null,
+      "heading": "Untrusted source fixture"
+    },
+    {
+      "source_id": "5818592d1f45a196225e7c0bc5acdc3b7b825aff9451af32972e0e4e07aab175",
+      "source_span_id": "787bb8c05946bc1db9acc7d7494894c8261513c36557f162713e362bf052d812",
+      "document_id": "1a7bbb63-3a87-4e55-a61a-84bc2f9ac2c4",
+      "document_version_id": "37d02c40-cd2e-486f-a225-24b780849733",
+      "path": "Archive/Terms.md",
+      "page": null,
+      "heading": "Terms"
+    },
+    {
+      "source_id": "226a7cbf9324f0bbfe9ded80205e5eae1f89657fcbe2d35c94788f437d7f4558",
+      "source_span_id": "d14f7306b91c16a34b8e5b1dd3c7289e663f7467e4651866cbf5578b2ded032f",
+      "document_id": "1a7bbb63-3a87-4e55-a61a-84bc2f9ac2c4",
+      "document_version_id": "37d02c40-cd2e-486f-a225-24b780849733",
+      "path": "Archive/Terms.md",
+      "page": null,
+      "heading": "Terms / Limits"
+    },
+    {
+      "source_id": "986c20282749c2f3cfe58013fa5299886931ac8e45c27112b19ade306c469334",
+      "source_span_id": "403931a03e1548381a941b54105eaba9dfbd9d8e1f09689ad236a752ed0abd1e",
+      "document_id": "227ade63-cae3-4cdd-8385-000f94775600",
+      "document_version_id": "51b11f05-c389-4fe9-b6cf-9a5971eed65c",
+      "path": "Engineering/Recovery.md",
+      "page": null,
+      "heading": "Recovery"
+    },
+    {
+      "source_id": "369514411e01891786755201a07d54d02632ae00fa6990f647a0960e60569251",
+      "source_span_id": "edfc51fa3a34586ccf772a4e11c060050eb833abb87e9d1973fb6b9cbcb07f50",
+      "document_id": "227ade63-cae3-4cdd-8385-000f94775600",
+      "document_version_id": "51b11f05-c389-4fe9-b6cf-9a5971eed65c",
+      "path": "Engineering/Recovery.md",
+      "page": null,
+      "heading": "Recovery / Backups"
+    },
+    {
+      "source_id": "b5e4dce5a747e33647f94025202fc84fab123ce14290e1e8e0305ea55ad0a4bb",
+      "source_span_id": "ce95c58ba9ab3bfb25066158d49a3b19743caf9dc50ca20aaa886f30d5b9968a",
+      "document_id": "574a4b20-7b8a-44dc-86c5-8a0de5ecd9cc",
+      "document_version_id": "542d5ccc-1575-4641-aa3a-3e94b871e642",
+      "path": "Index.md",
+      "page": null,
+      "heading": "Vault index"
+    },
+    {
+      "source_id": "ef874de25021b4d67f6962cd89c625d6e9670e28baffe84a2392291dcf4e5659",
+      "source_span_id": "405f6195f6a22943b78e9d4c1af9a731c099d798967abffa9990593a2f3b8519",
+      "document_id": "f170d22a-9cac-4953-8a8c-9e1e10bbfa5c",
+      "document_version_id": "381e6572-a74a-443f-8414-c91820bec113",
+      "path": "One/Duplicate.md",
+      "page": null,
+      "heading": "Duplicate"
+    },
+    {
+      "source_id": "f6954886140a1197a93a5fadeab9cd3e06137467d0e14423597db695d32c50b4",
+      "source_span_id": "dde9bf4b7a701ea5e545f792ebeaf3e20c30745aff9896f532fe5ed9e6861e1d",
+      "document_id": "600dcbba-98e4-4813-b804-5dc8a66192d0",
+      "document_version_id": "eee48d4c-66a5-48cd-90ff-6ceb0e3b7652",
+      "path": "Operations/Protocol.md",
+      "page": null,
+      "heading": "Operations"
+    },
+    {
+      "source_id": "1f7faff45d2e2edc2bc1ad69646a6e5845f92a6e02289fe56c15dba0222c46d4",
+      "source_span_id": "6f56deca36752ca36f622fa8db6f1cc3f7a09d942f41b7d9cf3ef7deddb2209a",
+      "document_id": "600dcbba-98e4-4813-b804-5dc8a66192d0",
+      "document_version_id": "eee48d4c-66a5-48cd-90ff-6ceb0e3b7652",
+      "path": "Operations/Protocol.md",
+      "page": null,
+      "heading": "Operations / Escalation"
+    },
+    {
+      "source_id": "e06fa9eac772c8d46101720984bb79b674611d05aea5cbe9eb4b3faad03b95c4",
+      "source_span_id": "7ce7d0f17022f931ca5c2cdc1e9f8c35a99a5342869e37029dea69d44de72c84",
+      "document_id": "fb9e5a55-1af3-48ba-b727-9d3ebc0cfe63",
+      "document_version_id": "fdb08082-118f-4fb3-bb16-e7eca747398d",
+      "path": "People/Mira.md",
+      "page": null,
+      "heading": "Mira"
+    },
+    {
+      "source_id": "67c03da9272cdb08ce6e5c1377524a47f6615cdf482f55b364a1e7a58009e8b1",
+      "source_span_id": "edbbdb4c2de31e9b321e72eb25bb62b0cdf1656bc37ceb4dc1727b15f3d995ed",
+      "document_id": "fb9e5a55-1af3-48ba-b727-9d3ebc0cfe63",
+      "document_version_id": "fdb08082-118f-4fb3-bb16-e7eca747398d",
+      "path": "People/Mira.md",
+      "page": null,
+      "heading": "Mira / Ownership"
+    },
+    {
+      "source_id": "f1817cd1450ce7058fb95874cb7557cbca2c1a0337c5ea643f6f67e1b567fe4b",
+      "source_span_id": "792186e195cad9e0390af80790e2e997476a817f958f79b912005fcd53765302",
+      "document_id": "354d985f-1392-4d14-b9b9-347b72af53a2",
+      "document_version_id": "6c090d01-a9a4-4d3b-9ea4-81413c004786",
+      "path": "Policies/Leave.md",
+      "page": null,
+      "heading": "Staff policy"
+    },
+    {
+      "source_id": "bce80007de7f161829bb3fd7e3720d14dfcdf267b5f4ccb3f30453f4f1ca75d7",
+      "source_span_id": "04878bfa6ff2fc9f020cbe4e86d01046bfb873f2a7afcd5eff8c32f341e0ce6e",
+      "document_id": "354d985f-1392-4d14-b9b9-347b72af53a2",
+      "document_version_id": "6c090d01-a9a4-4d3b-9ea4-81413c004786",
+      "path": "Policies/Leave.md",
+      "page": null,
+      "heading": "Staff policy / Annual leave"
+    },
+    {
+      "source_id": "a10f6bba0c5194b13a3e0111ab67a31400f9e0df9a56d61a05b3db0dc8e59a65",
+      "source_span_id": "48635981c5f3cd8b258bb1a5fa8e15847afd1bfd8738393c27e7340e193dfc89",
+      "document_id": "4bf9fcd0-f4e4-4b44-b9f3-d9d338d0e604",
+      "document_version_id": "ec57b86c-27c8-46fd-be38-300e822beac2",
+      "path": "Projects/Aurora.md",
+      "page": null,
+      "heading": "Aurora"
+    },
+    {
+      "source_id": "ca0c02eb36e05720ce4c505ef9f897a363c7369fe52d44dfc0029db05eafa1a6",
+      "source_span_id": "daa5704cdc5ea6a5059faa0dff9fc5d17c401ce02ed26df81cd6f943e0e6967b",
+      "document_id": "4bf9fcd0-f4e4-4b44-b9f3-d9d338d0e604",
+      "document_version_id": "ec57b86c-27c8-46fd-be38-300e822beac2",
+      "path": "Projects/Aurora.md",
+      "page": null,
+      "heading": "Aurora / Schedule"
+    },
+    {
+      "source_id": "82d07ee9c292106d37e5ecb92d527bdce1385e18b591e2e79fa726da746569aa",
+      "source_span_id": "a86b916c97c91079779eeed97ac28aecbecbdf5b72e407c30c3b8ff579f360b7",
+      "document_id": "f694a0a4-5b23-46cd-bcf3-c575068ecbbb",
+      "document_version_id": "30a0eb05-f383-4a8a-a0cd-81aad1f0a8ba",
+      "path": "Two/Duplicate.md",
+      "page": null,
+      "heading": "Duplicate"
+    }
+  ],
+  "limitations": [
+    "Small synthetic corpus, no live generation or cloud calls.",
+    "Hash embeddings test dense plumbing, not semantic paraphrase quality.",
+    "Source IDs validate provenance; they do not validate answer entailment."
+  ]
+}

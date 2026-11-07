@@ -1,0 +1,4 @@
+# Development-only scoped static checks; not part of the runtime CPU image.
+mypy==1.19.1
+pathspec==1.1.1
+librt==0.16.0
