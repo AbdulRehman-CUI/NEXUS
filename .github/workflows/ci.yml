@@ -53,6 +53,9 @@ jobs:
       - name: Browser fixtures (no keys, no model download)
         shell: bash
         run: |
+          python scripts/manage_byok_key.py --file "$RUNNER_TEMP/nexus-browser/.secrets/byok.key" --data artifacts/ci-browser
+          export NEXUS_BYOK_MASTER_KEY_FILE="$RUNNER_TEMP/nexus-browser/.secrets/byok.key"
+          python scripts/browser_provider_fixture.py > /tmp/nexus-provider.log 2>&1 &
           PYTHONPATH=apps/api NEXUS_DATA_DIR=artifacts/ci-browser python -m uvicorn nexus.main:app --host 127.0.0.1 --port 8000 --workers 1 --no-access-log > /tmp/nexus-api.log 2>&1 &
           NEXUS_TEST_PID=$!
           (cd apps/web && npm start > /tmp/nexus-web.log 2>&1) &
