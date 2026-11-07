@@ -18,3 +18,7 @@ artifacts/
 apps/web/test-results/
 apps/web/playwright-report/
 !tests/fixtures/
+
+
+# Package staged during the hosted API build.
+deploy/api/nexus/
