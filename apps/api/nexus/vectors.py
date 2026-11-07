@@ -2,12 +2,6 @@ import hashlib
 import json
 from typing import Protocol
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
-from llama_index.core.vector_stores import FilterOperator, MetadataFilter, MetadataFilters, VectorStoreQuery
-from llama_index.vector_stores.chroma import ChromaVectorStore
-
 
 class VectorIndex(Protocol):
     fingerprint: str
@@ -28,12 +22,16 @@ class ChromaIndex:
         namespace=None,
         fingerprint=None,
     ):
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+        from llama_index.vector_stores.chroma import ChromaVectorStore
+
         self.dimension = dimension
         self.configuration = {
             "embedding": embedding_fingerprint,
             "chunk_size": chunk_size,
             "overlap": overlap,
-            "parser": "normalized-v1",
+            "parser": "bounded-sentence-v2",
         }
         self.fingerprint = (
             fingerprint
@@ -54,6 +52,8 @@ class ChromaIndex:
         self.store = ChromaVectorStore(chroma_collection=self.collection)
 
     def upsert(self, chunks, embeddings):
+        from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
+
         if len(chunks) != len(embeddings) or any(len(vector) != self.dimension for vector in embeddings):
             raise ValueError("Vector dimension mismatch; rebuild with a compatible embedding configuration.")
         # Chroma's upsert makes interrupted/repeated jobs idempotent.
@@ -81,6 +81,13 @@ class ChromaIndex:
             )
 
     def search(self, workspace_id, vector, limit, document_ids=None):
+        from llama_index.core.vector_stores import (
+            FilterOperator,
+            MetadataFilter,
+            MetadataFilters,
+            VectorStoreQuery,
+        )
+
         if len(vector) != self.dimension:
             raise ValueError("Query embedding dimension does not match index dimension.")
         if document_ids == []:
@@ -116,3 +123,11 @@ class ChromaIndex:
                         ]
                     }
                 )
+
+
+def vector_index(settings, sessions, *args):
+    if settings.hosted:
+        from .hosted import PostgresIndex
+
+        return PostgresIndex(sessions.kw["bind"], *args)
+    return ChromaIndex(settings.data_dir / "chroma", *args)

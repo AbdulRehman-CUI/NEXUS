@@ -28,7 +28,7 @@ from .repository import Repository
 from .retrieval import RetrievalPipeline
 from .storage import FileStorage, validate_upload
 from .vaults import VaultService
-from .vectors import ChromaIndex
+from .vectors import vector_index
 
 logger = logging.getLogger("nexus")
 
@@ -43,8 +43,9 @@ class Service:
         self.repo = Repository(sessions, settings)
         self.files = FileStorage(settings.data_dir / "originals")
         self.embeddings = embedding_provider(settings)
-        self.index = ChromaIndex(
-            settings.data_dir / "chroma",
+        self.index = vector_index(
+            settings,
+            sessions,
             self.embeddings.fingerprint,
             settings.chunk_size,
             settings.chunk_overlap,
@@ -52,6 +53,14 @@ class Service:
         )
         # ponytail: serialize local storage operations; use document leases for multi-process deployment.
         self.lock = threading.RLock()
+        self.config_files = FileStorage(settings.data_dir)
+        if settings.hosted:
+            from .hosted import DatabaseLock, PostgresFiles
+
+            engine = sessions.kw["bind"]
+            self.lock = DatabaseLock(engine, settings.database_schema)
+            self.files = PostgresFiles(settings.data_dir / "originals", engine, "originals/")
+            self.config_files = PostgresFiles(settings.data_dir / "config", engine, "config/")
         self.stop_event = threading.Event()
         self.wake = threading.Event()
         self.thread = None
@@ -72,6 +81,10 @@ class Service:
         )
 
     def start(self):
+        with self.lock:
+            self._start()
+
+    def _start(self):
         with self.sessions.begin() as session:
             for job in session.scalars(select(Job).where(Job.status == "processing")):
                 job.status = "queued"

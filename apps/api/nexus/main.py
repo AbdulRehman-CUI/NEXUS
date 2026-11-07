@@ -21,7 +21,6 @@ from .database import Chat, Chunk, Citation, Document, IndexGeneration, Job, Not
 from .middleware import UploadLimitMiddleware
 from .providers import ProviderError
 from .service import Service, record
-from .storage import FileStorage
 
 
 class NameInput(BaseModel):
@@ -60,24 +59,28 @@ def create_app(settings: Settings | None = None):
         settings.data_dir = settings.data_dir.resolve()
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         with ExitStack() as cleanup:
-            cleanup.enter_context(DataLease(settings.data_dir))
-            if (settings.data_dir / ".restoring").exists():
-                raise RuntimeError(
-                    "Incomplete restore directory. Restore a verified backup into a new directory."
-                )
-            safe_config = FileStorage(settings.data_dir)
-            saved = safe_config.path("provider.json")
+            if settings.hosted:
+                from .hosted import postgres_database
+
+                engine, sessions = postgres_database(settings)
+            else:
+                cleanup.enter_context(DataLease(settings.data_dir))
+                if (settings.data_dir / ".restoring").exists():
+                    raise RuntimeError(
+                        "Incomplete restore directory. Restore a verified backup into a new directory."
+                    )
+                engine, sessions = database(settings.data_dir / "nexus.sqlite3")
+                config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+                with engine.begin() as connection:
+                    config.attributes["connection"] = connection
+                    command.upgrade(config, "head")
+            cleanup.callback(engine.dispose)
+            service = Service(settings, sessions)
+            saved = service.config_files.path("provider.json")
             if saved.exists():
                 config = ProviderInput.model_validate_json(saved.read_text("utf-8"))
                 for key, value in config.model_dump().items():
                     setattr(settings, key, value)
-            engine, sessions = database(settings.data_dir / "nexus.sqlite3")
-            cleanup.callback(engine.dispose)
-            config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-            with engine.begin() as connection:
-                config.attributes["connection"] = connection
-                command.upgrade(config, "head")
-            service = Service(settings, sessions)
             cleanup.callback(service.close)
             app.state.service = service
             app.state.engine = engine
@@ -157,11 +160,14 @@ def create_app(settings: Settings | None = None):
             return {"status": "ok"}
         return {
             "status": "ok",
-            "sqlite": sql,
+            "database": "postgresql" if settings.hosted else "sqlite",
+            "database_ready": sql,
+            "sqlite": sql and not settings.hosted,
             "vectors": True,
             "indexed_chunks": count,
             "files": os.access(service.files.root, os.W_OK),
-            "worker": bool(service.thread and service.thread.is_alive()),
+            "worker": settings.hosted or bool(service.thread and service.thread.is_alive()),
+            "processing_mode": "request" if settings.hosted else "background",
             "embedding_provider": settings.embedding_provider,
             "embedding_loaded": loaded,
         }
@@ -424,7 +430,7 @@ def create_app(settings: Settings | None = None):
     @app.patch("/api/settings/public")
     def update_settings(body: ProviderInput):
         with svc().lock:
-            FileStorage(settings.data_dir).write("provider.json", body.model_dump_json().encode())
+            svc().config_files.write("provider.json", body.model_dump_json().encode())
             for key, value in body.model_dump().items():
                 setattr(settings, key, value)
         return public_settings()

@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { api, setCsrf } from "../lib/api";
 
 type Identity = {
@@ -21,8 +21,25 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loginRequired, setLoginRequired] = useState(false);
+  const [setupAvailable, setSetupAvailable] = useState(false);
+  const [setupToken, setSetupToken] = useState("");
+  const setupFragment = useRef("");
   useEffect(() => {
     let active = true;
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("setup") || setupFragment.current;
+    setupFragment.current = token;
+    if (token) {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+    api<{ available: boolean }>("/api/auth/setup")
+      .then((status) => {
+        if (active) {
+          setSetupAvailable(status.available);
+          setSetupToken(token);
+        }
+      })
+      .catch(() => {});
     api<Identity>("/api/auth/me")
       .then((value) => {
         if (active) {
@@ -83,6 +100,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             setBusy(true);
             setError("");
             try {
+              if (setupAvailable) {
+                await api("/api/auth/setup", {
+                  method: "POST",
+                  body: JSON.stringify({ username, password, token: setupToken }),
+                });
+                setSetupAvailable(false);
+                setSetupToken("");
+              }
               const value = await api<Identity>("/api/auth/login", {
                 method: "POST",
                 body: JSON.stringify({ username, password }),
@@ -101,7 +126,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         >
           <span className="eyebrow">NEXUS · SERVER PROFILE</span>
           <h1>Your knowledge, privately.</h1>
-          <p>Sign in with an account created by your administrator.</p>
+          <p>{setupAvailable ? "Create your owner account to open NEXUS." : "Sign in with an account created by your administrator."}</p>
+          {setupAvailable && <label>Setup token<input type="password" autoComplete="off" value={setupToken} onChange={(event) => setSetupToken(event.target.value)} required /></label>}
           <label>
             Username
             <input
@@ -116,7 +142,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             Password
             <input
               type="password"
-              autoComplete="current-password"
+              autoComplete={setupAvailable ? "new-password" : "current-password"}
+              minLength={setupAvailable ? 12 : 1}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
@@ -129,11 +156,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             </p>
           )}
           <button className="button" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in"}
+            {busy ? "Opening workspace…" : setupAvailable ? "Create owner account" : "Sign in"}
           </button>
           <p className="field-help">
-            No public signup. The local profile needs no account. Ask your
-            administrator about account recovery.
+            {setupAvailable ? "Use at least 12 characters. The private setup token works only for the first account." : "No public signup. Ask your administrator about account recovery."}
           </p>
         </form>
       </main>

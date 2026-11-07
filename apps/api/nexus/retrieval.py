@@ -123,6 +123,10 @@ class RetrievalPipeline:
     def __init__(self, service):
         self.service = service
         self.lexical = SQLiteLexicalIndex()
+        if service.settings.hosted:
+            from .hosted import PostgresLexicalIndex
+
+            self.lexical = PostgresLexicalIndex()
         self.rerankers = {}
 
     def profile(self, session, workspace_id):

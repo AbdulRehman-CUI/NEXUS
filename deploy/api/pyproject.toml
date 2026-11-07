@@ -1,0 +1,4 @@
+[project]
+name = "nexus-hosted-api"
+version = "0.3.1"
+requires-python = ">=3.12,<3.13"

@@ -1,12 +1,19 @@
+import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="NEXUS_", env_file=".env", extra="ignore")
+    database_url: SecretStr = Field(
+        SecretStr(""), validation_alias=AliasChoices("NEXUS_DATABASE_URL", "DATABASE_URL", "database_url")
+    )
+    database_schema: str = "nexus"
+    hosted: bool = False
+    setup_token_hash: SecretStr = SecretStr("")
     data_dir: Path = Path("data")
     profile: Literal["local", "server"] = "local"
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver"]
@@ -61,6 +68,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def valid_overlap(self):
+        if self.hosted:
+            if not self.database_url.get_secret_value() or not self.byok_master_key.get_secret_value():
+                raise ValueError("Hosted mode requires DATABASE_URL and NEXUS_BYOK_MASTER_KEY.")
+            self.profile = "server"
+            self.worker_enabled = False
+            self.max_upload_mb = min(self.max_upload_mb, 3)
+            self.max_vault_bytes = min(self.max_vault_bytes, 3_000_000)
+            for name in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+                host = os.getenv(name, "")
+                if host and "/" not in host and host.endswith(".vercel.app"):
+                    if host not in self.allowed_hosts:
+                        self.allowed_hosts = [*self.allowed_hosts, host]
+                    origin = "https://" + host
+                    if origin not in self.cors_origins:
+                        self.cors_origins = [*self.cors_origins, origin]
         if self.profile == "local" and any(
             host not in {"localhost", "127.0.0.1", "testserver", "[::1]"} for host in self.allowed_hosts
         ):

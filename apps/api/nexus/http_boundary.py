@@ -25,6 +25,29 @@ def install_boundary(app, settings):
     def store_metric(request_id, user_id, workspace_id, route, method, status, elapsed):
         # Diagnostics must not stall the event loop or compete for a long writer lock on a full disk.
         try:
+            if settings.hosted:
+                from sqlalchemy import delete
+
+                from .database import RequestEvent, UsageEvent
+
+                with app.state.service.sessions.begin() as session:
+                    session.add(
+                        RequestEvent(
+                            id=request_id,
+                            user_id=user_id,
+                            workspace_id=workspace_id,
+                            route=route,
+                            method=method,
+                            status=status,
+                            elapsed_ms=elapsed,
+                        )
+                    )
+                    cutoff = (
+                        datetime.now(timezone.utc) - timedelta(days=settings.telemetry_retention_days)
+                    ).isoformat()
+                    session.execute(delete(RequestEvent).where(RequestEvent.created_at < cutoff))
+                    session.execute(delete(UsageEvent).where(UsageEvent.created_at < cutoff))
+                return
             with sqlite3.connect(settings.data_dir / "nexus.sqlite3", timeout=0.05) as connection:
                 connection.execute(
                     "INSERT INTO request_events (id,user_id,workspace_id,route,method,status,elapsed_ms,created_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -35,7 +58,7 @@ def install_boundary(app, settings):
                 ).isoformat()
                 connection.execute("DELETE FROM request_events WHERE created_at < ?", (cutoff,))
                 connection.execute("DELETE FROM usage_events WHERE created_at < ?", (cutoff,))
-        except sqlite3.Error:
+        except Exception:
             logger.warning("request_metric_write_failed request_id=%s", request_id)
 
     @app.middleware("http")
@@ -62,7 +85,7 @@ def install_boundary(app, settings):
             if request.method == "OPTIONS":
                 return await call_next(request)
             now = time.monotonic()
-            login = request.url.path == "/api/auth/login"
+            login = request.url.path in {"/api/auth/login", "/api/auth/setup"}
             key = (peer, "login" if login else "all")
             if len(buckets) > 5000:
                 buckets.clear()  # One process; reverse-proxy network limits remain necessary for server deployments.
@@ -88,7 +111,7 @@ def install_boundary(app, settings):
                     )
                     if account and not account.disabled:
                         user = Principal(account.id, account.admin)
-                public = request.url.path in {"/health", "/api/auth/login"}
+                public = request.url.path in {"/health", "/api/auth/login", "/api/auth/setup"}
                 if user is None and not public:
                     raise HTTPException(401, "Sign in to continue.")
                 if mutation and user and not login:
@@ -122,6 +145,19 @@ def install_boundary(app, settings):
             except TimeoutError:
                 raise HTTPException(503, "Server is busy. Retry shortly.") from None
             try:
+                if (
+                    settings.hosted
+                    and user
+                    and request.method == "GET"
+                    and (
+                        "/documents" in request.url.path
+                        or "/jobs/" in request.url.path
+                        or "/index" in request.url.path
+                        or "/vaults" in request.url.path
+                    )
+                ):
+                    # Await one durable unit within this invocation; never depend on a daemon thread.
+                    await asyncio.to_thread(app.state.service.process_one)
                 response = await call_next(request)
             finally:
                 slots.release()

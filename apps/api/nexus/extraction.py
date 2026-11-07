@@ -97,18 +97,25 @@ def extract(
 
 
 def split_passage(text: str, size: int, overlap: int):
-    from llama_index.core.node_parser import SentenceSplitter
-
-    # Character tokenizer avoids hidden tokenizer downloads in offline mode.
-    splitter = SentenceSplitter(chunk_size=size, chunk_overlap=overlap, tokenizer=list)
-    previous_start = -1
-    for piece in splitter.split_text(text):
-        start = text.find(piece, previous_start + 1)
-        if start < 0:
-            raise ValueError("Chunk could not be mapped to its normalized source span.")
-        end = start + len(piece)
-        yield piece, start, end
-        previous_start = start
+    start = 0
+    while start < len(text):
+        end = min(start + size, len(text))
+        if end < len(text):
+            # Prefer sentence/line boundaries in the final half, then a word boundary.
+            window = text[start + size // 2 : end]
+            boundaries = list(re.finditer(r"[.!?]\s+|\n+", window))
+            if boundaries:
+                end = start + size // 2 + boundaries[-1].end()
+            elif " " in window:
+                end = start + size // 2 + window.rfind(" ") + 1
+        piece = text[start:end]
+        left = len(piece) - len(piece.lstrip())
+        piece = piece.strip()
+        if piece:
+            yield piece, start + left, start + left + len(piece)
+        if end == len(text):
+            break
+        start = max(start + 1, end - overlap)
 
 
 def extract_docx(path, max_chars):
@@ -186,7 +193,7 @@ def bounded_extract(path, extension, settings):
     environment = {
         key: value
         for key, value in os.environ.items()
-        if not any(secret in key.upper() for secret in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+        if key in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL"}
     }
     environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
     environment["PYTHONDONTWRITEBYTECODE"] = "1"

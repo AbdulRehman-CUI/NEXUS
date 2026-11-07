@@ -15,6 +15,7 @@ jobs:
       NEXUS_GENERATION_PROVIDER: mock
       NEXUS_RATE_LIMIT_PER_MINUTE: "10000"
       NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, resolved 2026-11-04
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -31,6 +32,7 @@ jobs:
       - run: python -m pip install -r apps/api/requirements-typecheck.txt
       - run: python scripts/typecheck.py
       - run: python -m ruff check apps/api scripts
+      - run: mkdir -p artifacts
       - run: python -m pytest apps/api -q --basetemp artifacts/ci-tests
       - name: Backend syntax and schema contracts
         run: python -m compileall -q apps/api/nexus apps/api/migrations scripts
@@ -65,3 +67,4 @@ jobs:
           python scripts/wait_ready.py
           cd apps/web
           NEXUS_SERVER_TEST=1 npx playwright test server.spec.ts
+

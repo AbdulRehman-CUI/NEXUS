@@ -7,7 +7,7 @@ from sqlalchemy import select
 from .contracts import IndexConfiguration
 from .database import Chunk, Document, IndexGeneration, Workspace, uid
 from .providers import embedding_provider
-from .vectors import ChromaIndex
+from .vectors import vector_index
 
 
 class IndexManager:
@@ -46,8 +46,9 @@ class IndexManager:
                 update=config.model_dump(exclude={"normalization", "preprocessing"})
             )
             embeddings = embedding_provider(settings)
-            index = ChromaIndex(
-                settings.data_dir / "chroma",
+            index = vector_index(
+                settings,
+                self.service.sessions,
                 embeddings.fingerprint,
                 config.chunk_size,
                 config.chunk_overlap,
@@ -177,8 +178,9 @@ class IndexManager:
             )
             embeddings = embedding_provider(settings)
             namespace = f"nexus_{uid().replace('-', '')}"
-            index = ChromaIndex(
-                settings.data_dir / "chroma",
+            index = vector_index(
+                settings,
+                self.service.sessions,
                 embeddings.fingerprint,
                 config.chunk_size,
                 config.chunk_overlap,
