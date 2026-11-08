@@ -18,6 +18,13 @@
   },
   "rewrites": [
     {
+      "source": "/",
+      "destination": {
+        "service": "web",
+        "path": "/"
+      }
+    },
+    {
       "source": "/api/:path*",
       "destination": {
         "service": "api"
