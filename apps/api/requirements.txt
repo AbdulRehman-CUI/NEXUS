@@ -16,3 +16,4 @@ huggingface-hub==2.4.0
 numpy==2.5.4
 
 cryptography==50.0.2
+psycopg[binary]==3.2.9

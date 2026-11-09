@@ -13,15 +13,17 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
-from .database import AuthSession, Membership, User
+from .database import AuthSession, GuestSession, Membership, User, Workspace
 
 COOKIE = "nexus_session"
+GUEST_COOKIE = "__Host-nexus_guest"
 
 
 @dataclass(frozen=True)
 class Principal:
     id: str
     admin: bool = False
+    guest: bool = False
 
 
 principal: ContextVar[Principal | None] = ContextVar("principal", default=None)
@@ -76,6 +78,10 @@ def authorize(settings, session, workspace_id, role=None):
     user = principal.get()
     if user is None:
         raise HTTPException(401, "Sign in to continue.")
+    if user.guest:
+        if user.id != workspace_id:
+            raise HTTPException(404, "Workspace not found")
+        return
     membership = session.get(Membership, (workspace_id, user.id))
     if membership is None:
         raise HTTPException(404, "Workspace not found")
@@ -115,6 +121,13 @@ def me(request: Request):
         return {"profile": "local", "user": None, "csrf": None}
     if user is None:
         raise HTTPException(401, "Sign in to continue.")
+    if user.guest:
+        return {
+            "profile": "server",
+            "guest": True,
+            "user": None,
+            "csrf": csrf_token(request.cookies[GUEST_COOKIE]),
+        }
     with service.sessions() as session:
         record = session.get(User, user.id)
         return {
@@ -122,6 +135,57 @@ def me(request: Request):
             "user": {"id": user.id, "username": record.username, "admin": user.admin},
             "csrf": csrf_token(request.cookies[COOKIE]),
         }
+
+
+class GuestInput(BaseModel):
+    nonce: str = Field(pattern=r"^[a-f0-9]{64}$", min_length=64, max_length=64)
+
+
+@router.post("/guest")
+def guest_session(body: GuestInput, request: Request, response: Response):
+    svc = request.app.state.service
+    settings = svc.settings
+    if not settings.guest_access:
+        raise HTTPException(404, "Guest access is unavailable on this server.")
+    if request.url.scheme != "https" or request.headers.get("origin") not in settings.cors_origins:
+        raise HTTPException(403, "Guest initialization requires HTTPS and an allowed application origin.")
+    if principal.get():
+        return me(request)
+
+    # A browser retries with the same random nonce if a response is lost. Only the
+    # server can derive the bearer cookie. Concurrent instances contend on one SQL row.
+    secret = settings.guest_session_secret.get_secret_value().encode()
+    token = hmac.digest(secret, b"nexus-guest-cookie:" + body.nonce.encode(), "sha256").hex()
+    workspace_id = hmac.digest(secret, b"nexus-guest-workspace:" + body.nonce.encode(), "sha256").hex()
+    digest = token_hash(token)
+    now = int(time.time())
+    with svc.sessions.begin() as session:
+        if session.bind.dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+        else:
+            from sqlalchemy.dialects.sqlite import insert
+        # Keep expired rows so replaying an old nonce cannot revive an expired workspace.
+        session.execute(
+            insert(Workspace)
+            .values(id=workspace_id, name="Personal workspace")
+            .on_conflict_do_nothing(index_elements=[Workspace.id])
+        )
+        session.execute(
+            insert(GuestSession)
+            .values(
+                token_hash=digest,
+                workspace_id=workspace_id,
+                expires_at=now + settings.guest_session_hours * 3600,
+            )
+            .on_conflict_do_nothing(index_elements=[GuestSession.token_hash])
+        )
+        expires_at = session.get(GuestSession, digest).expires_at
+        if expires_at <= now:
+            raise HTTPException(409, "This guest session expired. Start a new session.")
+    response.set_cookie(
+        GUEST_COOKIE, token, max_age=expires_at - now, httponly=True, secure=True, samesite="strict", path="/"
+    )
+    return {"profile": "server", "guest": True, "user": None, "csrf": csrf_token(token)}
 
 
 @router.post("/login")

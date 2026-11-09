@@ -136,7 +136,10 @@ def upgrade():
         ["workspace_id"],
         unique=True,
         sqlite_where=sa.text("active=1"),
+        postgresql_where=sa.text("active"),
     )
+    if op.get_bind().dialect.name != "sqlite":
+        return
     op.execute("""CREATE VIRTUAL TABLE chunk_fts USING fts5(
         chunk_id UNINDEXED, workspace_id UNINDEXED, document_id UNINDEXED,
         version_id UNINDEXED, fingerprint UNINDEXED, title, metadata, text,

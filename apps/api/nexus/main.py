@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Query, UploadFile
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -59,22 +59,26 @@ def create_app(settings: Settings | None = None):
 
         settings.data_dir = settings.data_dir.resolve()
         settings.data_dir.mkdir(parents=True, exist_ok=True)
+        database_url = settings.database_url.get_secret_value()
         with ExitStack() as cleanup:
-            cleanup.enter_context(DataLease(settings.data_dir))
+            if not database_url:
+                cleanup.enter_context(DataLease(settings.data_dir))
             if (settings.data_dir / ".restoring").exists():
                 raise RuntimeError(
                     "Incomplete restore directory. Restore a verified backup into a new directory."
                 )
             safe_config = FileStorage(settings.data_dir)
             saved = safe_config.path("provider.json")
-            if saved.exists():
+            if not database_url and saved.exists():
                 config = ProviderInput.model_validate_json(saved.read_text("utf-8"))
                 for key, value in config.model_dump().items():
                     setattr(settings, key, value)
-            engine, sessions = database(settings.data_dir / "nexus.sqlite3")
+            engine, sessions = database(settings.data_dir / "nexus.sqlite3", database_url)
             cleanup.callback(engine.dispose)
             config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
             with engine.begin() as connection:
+                if database_url:
+                    connection.execute(text("SELECT pg_advisory_xact_lock(834102, 1)"))
                 config.attributes["connection"] = connection
                 command.upgrade(config, "head")
             service = Service(settings, sessions)
@@ -114,7 +118,11 @@ def create_app(settings: Settings | None = None):
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
-        if request.url.path.startswith("/api/me/provider-configurations"):
+        if request.url.path in {"/api/auth/guest", "/api/auth/login"}:
+            return JSONResponse({"detail": "Invalid session request."}, status_code=422)
+        if request.url.path.startswith("/api/me/provider-configurations") or request.url.path.endswith(
+            "/ai-selection/configuration"
+        ):
             # Pydantic's default error response includes the rejected input value.
             return JSONResponse(
                 {
@@ -131,11 +139,12 @@ def create_app(settings: Settings | None = None):
     def health():
         from .auth import principal
 
-        anonymous_server = settings.profile == "server" and principal.get() is None
+        actor = principal.get()
+        restricted_health = settings.profile == "server" and (actor is None or actor.guest)
         service = svc()
         with service.lock, service.sessions() as session:
             sql = session.execute(text("SELECT 1")).scalar() == 1
-            service.index.collection.count()  # Verify vector storage remains readable.
+            service.index.count()
             count = session.scalar(
                 select(func.count())
                 .select_from(Chunk)
@@ -153,14 +162,14 @@ def create_app(settings: Settings | None = None):
                 getattr(embedding, "model", None) is not None
                 for embedding, _ in service.indexes.adapters.values()
             )
-        if anonymous_server:
+        if restricted_health:
             return {"status": "ok"}
         return {
             "status": "ok",
             "sqlite": sql,
             "vectors": True,
             "indexed_chunks": count,
-            "files": os.access(service.files.root, os.W_OK),
+            "files": bool(settings.database_url.get_secret_value()) or os.access(service.files.root, os.W_OK),
             "worker": bool(service.thread and service.thread.is_alive()),
             "embedding_provider": settings.embedding_provider,
             "embedding_loaded": loaded,
@@ -174,7 +183,12 @@ def create_app(settings: Settings | None = None):
         with svc().sessions() as session:
             query = select(Workspace).order_by(Workspace.created_at)
             if settings.profile == "server":
-                query = query.join(Membership).where(Membership.user_id == principal.get().id)
+                actor = principal.get()
+                query = (
+                    query.where(Workspace.id == actor.id)
+                    if actor.guest
+                    else query.join(Membership).where(Membership.user_id == actor.id)
+                )
             return [record(w) for w in session.scalars(query)]
 
     @app.post("/api/workspaces", status_code=201)
@@ -182,6 +196,9 @@ def create_app(settings: Settings | None = None):
         from .auth import principal
         from .database import Membership
 
+        actor = principal.get()
+        if actor and actor.guest:
+            raise HTTPException(403, "A guest session has one private workspace.")
         with svc().sessions.begin() as session:
             workspace = Workspace(name=body.name.strip())
             session.add(workspace)
@@ -342,17 +359,33 @@ def create_app(settings: Settings | None = None):
             document = svc().repo.get(session, Document, document_id, workspace_id)
             if document.status == "deleting":
                 raise HTTPException(409, "Document is awaiting deletion")
+            media_type = {
+                ".pdf": "application/pdf",
+                ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            }.get(document.extension, "text/plain")
+            disposition = "inline" if document.extension == ".pdf" else "attachment"
+            if settings.database_url.get_secret_value():
+                from urllib.parse import quote
+
+                try:
+                    content = svc().files.read(document.storage_key, session=session)
+                except FileNotFoundError:
+                    raise HTTPException(404, "Original file is unavailable") from None
+                return Response(
+                    content,
+                    media_type=media_type,
+                    headers={
+                        "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(document.title, safe='')}"
+                    },
+                )
             path = svc().files.path(document.storage_key)
             if not path.is_file():
                 raise HTTPException(404, "Original file is unavailable")
             return FileResponse(
                 path,
-                media_type={
-                    ".pdf": "application/pdf",
-                    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                }.get(document.extension, "text/plain"),
+                media_type=media_type,
                 filename=document.title,
-                content_disposition_type="inline" if document.extension == ".pdf" else "attachment",
+                content_disposition_type=disposition,
             )
 
     @app.get("/api/workspaces/{workspace_id}/chats")
@@ -423,6 +456,8 @@ def create_app(settings: Settings | None = None):
 
     @app.patch("/api/settings/public")
     def update_settings(body: ProviderInput):
+        if settings.database_url.get_secret_value():
+            raise HTTPException(409, "Configure hosted server defaults through environment variables.")
         with svc().lock:
             FileStorage(settings.data_dir).write("provider.json", body.model_dump_json().encode())
             for key, value in body.model_dump().items():

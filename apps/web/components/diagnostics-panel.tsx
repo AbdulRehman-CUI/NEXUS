@@ -64,7 +64,7 @@ const help = [
   ],
   [
     "Use a remote provider",
-    "Choose a workspace provider/model in Settings, configure the matching server environment key, enable workspace cloud permission and confirm the exact destination. Optional paid providers require separate permission. No fallback or automatic retry occurs.",
+    "Open Select LLM, test a provider key, choose a model and confirm remote use. Paid models and models with unknown pricing require billing consent.",
   ],
   [
     "Citations and unsupported questions",
@@ -83,9 +83,11 @@ const help = [
 export function DiagnosticsPanel({
   workspaceId,
   onError,
+  guest,
 }: {
   workspaceId: string;
   onError: (cause: unknown) => void;
+  guest: boolean;
 }) {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [reviews, setReviews] = useState<
@@ -301,7 +303,7 @@ export function DiagnosticsPanel({
             </button>
           ))}
       </section>
-      <section className="settings-card">
+      {!guest && <section className="settings-card">
         <h2>Compare the same evidence</h2>
         <p>
           Run the offline extractive baseline beside your saved workspace
@@ -385,7 +387,7 @@ export function DiagnosticsPanel({
             </div>
           </>
         )}
-      </section>
+      </section>}
       <section className="settings-card">
         <h2>Private review queue</h2>
         <p>

@@ -1,12 +1,26 @@
 import hashlib
 import json
+from heapq import nsmallest
 from typing import Protocol
 
 import chromadb
+import numpy as np
 from chromadb.config import Settings as ChromaSettings
 from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
 from llama_index.core.vector_stores import FilterOperator, MetadataFilter, MetadataFilters, VectorStoreQuery
 from llama_index.vector_stores.chroma import ChromaVectorStore
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
+
+from .database import StoredVector
+
+
+def index_configuration(embedding, chunk_size, overlap):
+    return {"embedding": embedding, "chunk_size": chunk_size, "overlap": overlap, "parser": "normalized-v1"}
+
+
+def index_fingerprint(configuration):
+    return hashlib.sha256(json.dumps(configuration, sort_keys=True).encode()).hexdigest()[:24]
 
 
 class VectorIndex(Protocol):
@@ -29,21 +43,14 @@ class ChromaIndex:
         fingerprint=None,
     ):
         self.dimension = dimension
-        self.configuration = {
-            "embedding": embedding_fingerprint,
-            "chunk_size": chunk_size,
-            "overlap": overlap,
-            "parser": "normalized-v1",
-        }
-        self.fingerprint = (
-            fingerprint
-            or hashlib.sha256(json.dumps(self.configuration, sort_keys=True).encode()).hexdigest()[:24]
-        )
+        self.configuration = index_configuration(embedding_fingerprint, chunk_size, overlap)
+        self.fingerprint = fingerprint or index_fingerprint(self.configuration)
+        self.namespace = namespace or f"nexus_{self.fingerprint}"
         self.client = chromadb.PersistentClient(
             path=str(path), settings=ChromaSettings(anonymized_telemetry=False)
         )
         self.collection = self.client.get_or_create_collection(
-            namespace or f"nexus_{self.fingerprint}",
+            self.namespace,
             metadata={
                 "hnsw:space": "cosine",
                 "configuration": json.dumps(self.configuration, sort_keys=True),
@@ -52,6 +59,15 @@ class ChromaIndex:
             },
         )
         self.store = ChromaVectorStore(chroma_collection=self.collection)
+
+    def count(self):
+        return self.collection.count()
+
+    def ids(self, workspace_id):
+        return self.collection.get(where={"workspace_id": workspace_id}, include=[])["ids"]
+
+    def clear_document(self, workspace_id, document_id):
+        self.collection.delete(where={"$and": [{"workspace_id": workspace_id}, {"document_id": document_id}]})
 
     def upsert(self, chunks, embeddings):
         if len(chunks) != len(embeddings) or any(len(vector) != self.dimension for vector in embeddings):
@@ -116,3 +132,85 @@ class ChromaIndex:
                         ]
                     }
                 )
+
+
+class PostgresIndex:
+    """Durable workspace-scoped exact vector search without database extensions."""
+
+    def __init__(self, sessions, embedding, chunk_size, overlap, dimension, namespace=None, fingerprint=None):
+        self.sessions, self.dimension = sessions, dimension
+        self.fingerprint = fingerprint or index_fingerprint(
+            index_configuration(embedding, chunk_size, overlap)
+        )
+        self.namespace = namespace or f"nexus_{self.fingerprint}"
+
+    def count(self):
+        with self.sessions() as session:
+            return session.scalar(
+                select(func.count()).select_from(StoredVector).where(StoredVector.namespace == self.namespace)
+            )
+
+    def scoped(self, statement, workspace_id):
+        return statement.where(
+            StoredVector.namespace == self.namespace, StoredVector.workspace_id == workspace_id
+        )
+
+    def ids(self, workspace_id):
+        with self.sessions() as session:
+            return list(session.scalars(self.scoped(select(StoredVector.chunk_id), workspace_id)))
+
+    def clear_document(self, workspace_id, document_id):
+        with self.sessions.begin() as session:
+            session.execute(
+                self.scoped(delete(StoredVector), workspace_id).where(StoredVector.document_id == document_id)
+            )
+
+    def delete_document(self, workspace_id, document_id):
+        with self.sessions.begin() as session:
+            session.execute(
+                delete(StoredVector).where(
+                    StoredVector.workspace_id == workspace_id, StoredVector.document_id == document_id
+                )
+            )
+
+    def upsert(self, chunks, embeddings):
+        if len(chunks) != len(embeddings) or any(len(vector) != self.dimension for vector in embeddings):
+            raise ValueError("Vector dimension mismatch; rebuild with a compatible embedding configuration.")
+        statement = insert(StoredVector)
+        with self.sessions.begin() as session:
+            session.execute(
+                statement.on_conflict_do_update(
+                    index_elements=[StoredVector.namespace, StoredVector.chunk_id],
+                    set_={"embedding": statement.excluded.embedding},
+                ),
+                [
+                    {
+                        "namespace": self.namespace,
+                        "chunk_id": chunk["id"],
+                        "embedding": vector,
+                        "workspace_id": chunk["metadata"]["workspace_id"],
+                        "document_id": chunk["metadata"]["document_id"],
+                    }
+                    for chunk, vector in zip(chunks, embeddings)
+                ],
+            )
+
+    def search(self, workspace_id, vector, limit, document_ids=None):
+        if len(vector) != self.dimension:
+            raise ValueError("Query embedding dimension does not match index dimension.")
+        if document_ids == []:
+            return []
+        query = self.scoped(select(StoredVector.chunk_id, StoredVector.embedding), workspace_id)
+        if document_ids is not None:
+            query = query.where(StoredVector.document_id.in_(document_ids))
+        target = np.asarray(vector)
+        target_norm = np.linalg.norm(target)
+
+        def ranked(rows):
+            for chunk_id, embedding in rows:
+                norm = target_norm * np.linalg.norm(embedding)
+                yield chunk_id, float(1 - np.dot(target, embedding) / norm) if norm else 1.0
+
+        with self.sessions() as session:
+            rows = session.execute(query.execution_options(yield_per=256))
+            return nsmallest(limit, ranked(rows), key=lambda row: (row[1], row[0]))

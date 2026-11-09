@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -14,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from sqlalchemy import func, select
 
 from .auth import principal
-from .database import ProviderConfiguration, ProviderSelection, ProviderUsage, now, uid
+from .database import GuestSession, ProviderConfiguration, ProviderSelection, ProviderUsage, now, uid
 from .gateway import is_remote
 from .provider_transport import (
     GenerationCancelled,
@@ -32,7 +33,7 @@ def owner_id(settings):
     actor = principal.get()
     if not actor:
         raise HTTPException(401, "Sign in to continue.")
-    return "user:" + actor.id
+    return ("guest:" if actor.guest else "user:") + actor.id
 
 
 class ConfigurationInput(BaseModel):
@@ -147,8 +148,8 @@ class ByokStore:
         self.service = service
         self.vault = CredentialVault(service.settings)
 
-    def get(self, session, identifier, owner=None):
-        row = session.get(ProviderConfiguration, identifier)
+    def get(self, session, identifier, owner=None, *, lock=False):
+        row = session.get(ProviderConfiguration, identifier, with_for_update=lock and self.service.postgres)
         if row is None or row.deleted or row.owner != (owner or owner_id(self.service.settings)):
             raise HTTPException(404, "Provider configuration not found.")
         return row
@@ -167,14 +168,24 @@ class ByokStore:
             "model_metadata": metadata,
         }
 
-    def save(self, body, identifier=None):
+    def save(self, body, identifier=None, *, transaction=None, models=None, connection=None, revision=None):
         svc, owner = self.service, owner_id(self.service.settings)
         destination = base_url(svc.settings, body.provider, body.base_url)
         c = body.model_dump(exclude={"api_key"})
         c.update(destination=destination, base_url=destination if body.provider == "compatible" else "")
-        with svc.lock, svc.sessions.begin() as session:
+        actor = principal.get()
+        with (
+            svc.lock,
+            nullcontext(transaction) if transaction is not None else svc.sessions.begin() as session,
+        ):
+            if svc.postgres and actor and actor.guest:
+                session.scalar(
+                    select(GuestSession).where(GuestSession.workspace_id == actor.id).with_for_update()
+                )
             if identifier:
-                row = self.get(session, identifier, owner)
+                row = self.get(session, identifier, owner, lock=True)
+                if revision and revision != row.revision:
+                    raise HTTPException(409, "The saved configuration changed. Test it again.")
                 if (
                     row.configuration["provider"] != body.provider
                     or row.configuration["destination"] != destination
@@ -197,6 +208,8 @@ class ByokStore:
             if body.api_key is not None:
                 row.encrypted_key = self.vault.encrypt(row, body.api_key.get_secret_value())
                 row.models = []
+            if models is not None:
+                row.models = models
             metadata = next((m for m in (row.models or []) if m["id"] == body.model), None)
             if body.temperature is not None and not temperature_supported(
                 body.provider, body.model, metadata
@@ -204,7 +217,7 @@ class ByokStore:
                 raise HTTPException(
                     422, "Temperature is not advertised for this model. Leave it on provider default."
                 )
-            row.connection = {
+            row.connection = connection or {
                 "status": "not_tested",
                 "message": "Saved. Test the connection; inference has not been verified.",
             }
@@ -304,7 +317,7 @@ class PersonalGenerator:
     def generate(self, question, evidence):
         svc, store = self.store.service, self.store
         with svc.lock, svc.sessions.begin() as session:
-            row = store.get(session, self.identifier, self.owner)
+            row = store.get(session, self.identifier, self.owner, lock=True)
             if row.revision != self.revision:
                 raise HTTPException(
                     409, "Model settings changed during retrieval. Ask again using the new configuration."
@@ -344,6 +357,8 @@ class PersonalGenerator:
             session.flush()
             event_id = event.id
             adapter = store.transport(row, self.cancelled)
+            actor = principal.get()
+            adapter.config["general_chat"] = bool(actor and actor.guest and not evidence)
         started, status, answer = time.perf_counter(), "failed", ""
         try:
             answer = adapter.generate(question, evidence, self.on_delta)

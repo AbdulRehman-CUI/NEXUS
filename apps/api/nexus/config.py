@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="NEXUS_", env_file=".env", extra="ignore")
     data_dir: Path = Path("data")
     profile: Literal["local", "server"] = "local"
+    database_url: SecretStr = SecretStr("")
+    guest_access: bool = False
+    guest_session_secret: SecretStr = SecretStr("")
+    guest_session_hours: int = Field(168, ge=1, le=720)
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver"]
     secure_cookies: bool = True
     session_hours: int = Field(12, ge=1, le=168)
@@ -61,6 +65,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def valid_overlap(self):
+        if self.database_url.get_secret_value() and self.profile != "server":
+            raise ValueError("PostgreSQL requires the server profile.")
+        if self.guest_access and (
+            self.profile != "server"
+            or not self.secure_cookies
+            or len(self.guest_session_secret.get_secret_value()) < 32
+        ):
+            raise ValueError(
+                "Guest access requires the server profile, Secure cookies and a guest session secret of at least 32 characters."
+            )
         if self.profile == "local" and any(
             host not in {"localhost", "127.0.0.1", "testserver", "[::1]"} for host in self.allowed_hosts
         ):

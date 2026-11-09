@@ -71,6 +71,14 @@ def base_url(settings, provider, custom=""):
     if provider == "compatible":
         return destination(settings.model_copy(update={"compatible_base_url": custom}), provider)
     if provider == "ollama":
+        from .auth import principal
+
+        if principal.get() and principal.get().guest:
+            raise ProviderFailure(
+                "local_unavailable",
+                "Ollama requires a server-local installation and is unavailable in guest mode.",
+                403,
+            )
         return destination(settings, provider)
     return BASES[provider]
 
@@ -311,7 +319,9 @@ class ProviderTransport:
             + (
                 "Selected model is listed; inference was not run."
                 if found
-                else "Manual model ID is not listed; save is allowed, but inference compatibility is unverified."
+                else "Choose a model from the catalog."
+                if self.config["model"] == "unselected"
+                else "Manual model ID is not listed; inference compatibility is unverified."
             ),
             "scope": "metadata_only",
         }
@@ -338,8 +348,12 @@ class ProviderTransport:
 
     def payload(self, question, evidence, stream):
         c, p = self.config, self.provider
+        system = SYSTEM_PROMPT
         content = json.dumps({"question": question, "evidence": evidence}, ensure_ascii=False)
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": content}]
+        if c.get("general_chat"):
+            system = "Answer the user's question directly. No documents or tools are available. Do not fabricate citations."
+            content = question
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
         temperature = c.get("temperature")
         if temperature is not None and not temperature_supported(p, c["model"], self.metadata):
             raise ProviderFailure(
@@ -352,7 +366,7 @@ class ProviderTransport:
                 "/messages",
                 {
                     "model": c["model"],
-                    "system": SYSTEM_PROMPT,
+                    "system": system,
                     "messages": messages[1:],
                     "max_tokens": c["max_output_tokens"],
                     "stream": stream,
@@ -363,7 +377,7 @@ class ProviderTransport:
                 "streamGenerateContent?alt=sse" if stream else "generateContent"
             )
             body = {
-                "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                "systemInstruction": {"parts": [{"text": system}]},
                 "contents": [{"role": "user", "parts": [{"text": content}]}],
                 "generationConfig": {"maxOutputTokens": c["max_output_tokens"]},
             }

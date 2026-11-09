@@ -1,6 +1,8 @@
 import os
 import re
+from contextlib import contextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 
@@ -29,6 +31,56 @@ class FileStorage:
 
     def delete(self, key: str):
         self.path(key).unlink(missing_ok=True)
+
+    def read(self, key: str):
+        return self.path(key).read_bytes()
+
+    @contextmanager
+    def materialize(self, key: str):
+        yield self.path(key)
+
+
+class DatabaseFileStorage:
+    def __init__(self, sessions):
+        self.sessions = sessions
+
+    def write(self, key: str, content: bytes, session=None):
+        from .database import StoredFile
+
+        if session is not None:
+            session.add(StoredFile(key=key, content=content))
+        else:
+            with self.sessions.begin() as writer:
+                self.write(key, content, writer)
+
+    def read(self, key: str, session=None):
+        from .database import StoredFile
+
+        if session is None:
+            with self.sessions() as reader:
+                return self.read(key, reader)
+        row = session.get(StoredFile, key)
+        if row is None:
+            raise FileNotFoundError()
+        return row.content
+
+    def delete(self, key: str, session=None):
+        from sqlalchemy import delete
+
+        from .database import StoredFile
+
+        if session is not None:
+            session.execute(delete(StoredFile).where(StoredFile.key == key))
+        else:
+            with self.sessions.begin() as writer:
+                self.delete(key, writer)
+
+    @contextmanager
+    def materialize(self, key: str):
+        with TemporaryDirectory(prefix="nexus-source-") as directory:
+            path = Path(directory) / key
+            path.write_bytes(self.read(key))
+            yield path
 
 
 def validate_upload(filename: str, mime: str, content: bytes) -> tuple[str, str]:

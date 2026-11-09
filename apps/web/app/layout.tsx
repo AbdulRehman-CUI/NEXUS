@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { AuthGate } from "../components/auth-gate";
+import { WorkspaceSession } from "../components/auth-gate";
 
 export const metadata: Metadata = {
   title: {
@@ -28,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthGate>{children}</AuthGate>
+        <WorkspaceSession>{children}</WorkspaceSession>
       </body>
     </html>
   );

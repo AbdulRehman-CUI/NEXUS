@@ -136,3 +136,5 @@ cryptography==50.0.2
 cffi==2.1.1
 
 pycparser==3.12
+psycopg==3.2.9
+psycopg-binary==3.2.9

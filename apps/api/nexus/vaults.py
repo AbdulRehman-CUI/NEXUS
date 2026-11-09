@@ -407,7 +407,7 @@ class VaultService:
                 entry = run.manifest[run.cursor] if run.cursor < len(run.manifest) else None
             try:
                 if entry:
-                    data = self.service.files.path(entry["storage_key"]).read_bytes()
+                    data = self.service.files.read(entry["storage_key"])
                     if hashlib.sha256(data).hexdigest() != entry["hash"]:
                         raise ValueError("Staged note failed its content hash check.")
                     result = self.service.upload(

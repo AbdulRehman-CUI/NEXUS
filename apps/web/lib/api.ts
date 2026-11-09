@@ -1,7 +1,65 @@
-export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
-let csrf: string | null = null;
-export function setCsrf(value: string | null) {
-  csrf = value;
+export const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+export type Identity = {
+  profile: "local" | "server";
+  guest?: boolean;
+  user: { admin: boolean } | null;
+  csrf: string | null;
+};
+
+let identity: Identity | null = null;
+let initializing: Promise<Identity> | null = null;
+let guestNonce: string | null = null;
+
+async function openSession(): Promise<Identity> {
+  const current = await fetch(`${API}/api/auth/me`, { credentials: "include", cache: "no-store" });
+  if (current.ok) {
+    guestNonce = null;
+    return current.json();
+  }
+  if (current.status !== 401)
+    throw new Error("Could not open your workspace. Retry the connection.");
+  guestNonce ??= Array.from(
+    crypto.getRandomValues(new Uint8Array(32)),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const result = await fetch(`${API}/api/auth/guest`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nonce: guestNonce }),
+  });
+  if (result.status === 409) guestNonce = null;
+  if (!result.ok)
+    throw new Error(result.status === 404
+      ? "Guest workspaces are unavailable on this server."
+      : "Could not open a guest workspace. Retry the connection.");
+  // Confirm the browser accepted the HttpOnly cookie before enabling mutations.
+  const confirmed = await fetch(`${API}/api/auth/me`, { credentials: "include", cache: "no-store" });
+  if (!confirmed.ok)
+    throw new Error("Allow cookies for NEXUS and retry opening your workspace.");
+  guestNonce = null;
+  return confirmed.json();
+}
+
+export function initializeSession() {
+  if (identity) return Promise.resolve(identity);
+  if (!initializing) {
+    // Only one tab checks and initializes the cookie at a time on first visit.
+    const opening = async () => navigator.locks
+      ? await navigator.locks.request("nexus-session", openSession)
+      : openSession();
+    initializing = opening().then((session) => (identity = session)).finally(() => {
+      initializing = null;
+    });
+  }
+  return initializing;
+}
+
+function expired(session: Identity | null) {
+  if (!session || identity !== session) return;
+  identity = null;
+  window.dispatchEvent(new Event("nexus-session-expired"));
 }
 
 export type Workspace = { id: string; name: string; cloud_opt_in: boolean };
@@ -195,6 +253,8 @@ export async function api<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const session = identity;
+  const csrf = session?.csrf;
   const response = await fetch(`${API}${path}`, {
     ...options,
     credentials: "include",
@@ -213,7 +273,7 @@ export async function api<T>(
       !path.startsWith("/api/auth/") &&
       typeof window !== "undefined"
     )
-      window.dispatchEvent(new Event("nexus-auth-required"));
+      expired(session);
     const body = await response.json().catch(() => null);
     throw new Error(
       typeof body?.detail === "string"
@@ -230,6 +290,8 @@ export async function streamAnswer(
   signal: AbortSignal,
   onProvisional: (text: string) => void,
 ): Promise<Message> {
+  const session = identity;
+  const csrf = session?.csrf;
   const response = await fetch(`${API}${path}`, {
     method: "POST",
     credentials: "include",
@@ -243,8 +305,7 @@ export async function streamAnswer(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    if (response.status === 401)
-      window.dispatchEvent(new Event("nexus-auth-required"));
+    if (response.status === 401) expired(session);
     const error = await response.json().catch(() => null);
     throw new Error(
       typeof error?.detail === "string"
@@ -327,6 +388,8 @@ export function uploadFile(
   file: File,
   onProgress: (percent: number) => void,
 ): Promise<{ duplicate: boolean }> {
+  const session = identity;
+  const csrf = session?.csrf;
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API}/api/workspaces/${workspaceId}/documents`);
@@ -337,6 +400,7 @@ export function uploadFile(
         onProgress(Math.round((event.loaded / event.total) * 100));
     };
     xhr.onload = () => {
+      if (xhr.status === 401) expired(session);
       let body;
       try {
         body = JSON.parse(xhr.responseText);

@@ -47,10 +47,16 @@ def test_backup_restore_full_fixture_and_tampering(tmp_path):
     from test_indexes import drain
     from test_vaults import import_zip
 
+    from nexus.database import GuestSession
+
     source = tmp_path / "original"
     settings = Settings(_env_file=None, data_dir=source, embedding_provider="hash", worker_enabled=False)
     with TestClient(create_app(settings)) as client:
         workspace = client.get("/api/workspaces").json()[0]["id"]
+        with client.app.state.service.sessions.begin() as session:
+            session.add(
+                GuestSession(token_hash="guest-backup-fixture", workspace_id=workspace, expires_at=2147483647)
+            )
         upload(client, workspace)
         imported = import_zip(client, workspace, {"a.md": "# A\n[[b]] #tag", "b.md": "# B\nRestore proof."})
         drain(client)
@@ -62,10 +68,12 @@ def test_backup_restore_full_fixture_and_tampering(tmp_path):
         with pytest.raises(RuntimeError, match="in use"):
             backup(source, tmp_path / "live.zip")
     archive = tmp_path / "backup.zip"
-    assert backup(source, archive)["database_revision"] == "0005"
+    assert backup(source, archive)["database_revision"] == "0006"
     target = tmp_path / "restored"
     assert restore(archive, target)["sessions_revoked"]
     with TestClient(create_app(settings.model_copy(update={"data_dir": target}))) as client:
+        with client.app.state.service.sessions() as session:
+            assert session.get(GuestSession, "guest-backup-fixture").expires_at == 0
         assert client.get(citation).status_code == 200
         assert client.get(f"/api/chats/{conversation}?workspace_id={workspace}").json()["messages"]
         assert client.post(

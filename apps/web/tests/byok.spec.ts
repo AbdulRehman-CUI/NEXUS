@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { showTestModel } from "./local-chat-fixture";
 
 const api = "http://127.0.0.1:8000";
 const root = "/api/me/provider-configurations";
@@ -111,7 +112,6 @@ test("cloud key masking, discovery, private persistence, consent, defaults and k
   const saved = await savedPromise;
   expect(saved.status()).toBe(201);
   expect(await saved.text()).not.toContain(fakeKey);
-  const config = await saved.json();
   await expect(key).toHaveValue("");
   await expect(
     page.getByRole("button", { name: "Show unsaved key", exact: true }),
@@ -162,11 +162,8 @@ test("cloud key masking, discovery, private persistence, consent, defaults and k
     .click();
   await page.goto("/");
   await expect(
-    page.getByLabel("Active personal model", { exact: true }),
-  ).toHaveValue(config.id);
-  await page
-    .getByLabel("Active personal model", { exact: true })
-    .selectOption("workspace");
+    page.getByRole("link", { name: "Change model: openrouter/browser-model" }),
+  ).toBeVisible();
   await page.goto("/settings");
   await page
     .getByRole("button", { name: "Edit Private cloud browser", exact: true })
@@ -316,6 +313,12 @@ test("native select theme and keyboard behavior, real retrieval value, favicon a
   page,
   request,
 }) => {
+  await showTestModel(page);
+  await page.route("**/api/chats/*/messages?workspace_id=*", (route) =>
+    route.fulfill({
+      json: { id: "reply", role: "assistant", content: "Test answer", provider: "ollama", citations: [] },
+    }),
+  );
   await page.goto("/");
   await expect(page).toHaveTitle("NEXUS — Personal Knowledge Intelligence");
   const select = page.getByLabel("Retrieval mode", { exact: true });
@@ -345,7 +348,7 @@ test("native select theme and keyboard behavior, real retrieval value, favicon a
   expect((await sent).postDataJSON().options.mode).toBe("keyword");
   await expect(page.locator(".message.assistant")).toBeVisible();
   await page
-    .getByRole("button", { name: "Account and appearance", exact: true })
+    .getByRole("button", { name: "Appearance", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Switch to light appearance", exact: true })

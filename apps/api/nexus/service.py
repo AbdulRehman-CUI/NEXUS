@@ -5,6 +5,7 @@ import threading
 
 from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy import text as sql_text
 
 from .database import (
     Chat,
@@ -26,9 +27,9 @@ from .indexes import IndexManager
 from .providers import ProviderError, embedding_provider
 from .repository import Repository
 from .retrieval import RetrievalPipeline
-from .storage import FileStorage, validate_upload
+from .storage import DatabaseFileStorage, FileStorage, validate_upload
 from .vaults import VaultService
-from .vectors import ChromaIndex
+from .vectors import ChromaIndex, PostgresIndex
 
 logger = logging.getLogger("nexus")
 
@@ -41,10 +42,12 @@ class Service:
     def __init__(self, settings, sessions):
         self.settings, self.sessions = settings, sessions
         self.repo = Repository(sessions, settings)
-        self.files = FileStorage(settings.data_dir / "originals")
+        self.postgres = bool(settings.database_url.get_secret_value())
+        self.files = (
+            DatabaseFileStorage(sessions) if self.postgres else FileStorage(settings.data_dir / "originals")
+        )
         self.embeddings = embedding_provider(settings)
-        self.index = ChromaIndex(
-            settings.data_dir / "chroma",
+        self.index = self.vector_index(
             self.embeddings.fingerprint,
             settings.chunk_size,
             settings.chunk_overlap,
@@ -66,6 +69,17 @@ class Service:
         self.byok = ByokStore(self)
         self.stream_slots = threading.BoundedSemaphore(4)
 
+    def vector_index(self, *args):
+        if self.postgres:
+            return PostgresIndex(self.sessions, *args)
+        return ChromaIndex(self.settings.data_dir / "chroma", *args)
+
+    def reset_interrupted_jobs(self, session):
+        for job in session.scalars(select(Job).where(Job.status == "processing")):
+            job.status = "queued"
+            document = session.get(Document, job.document_id)
+            document.status = "deleting" if job.kind == "delete" else "queued"
+
     def log_failure(self, kind, resource_id, error):
         logger.warning(
             "operation_failed kind=%s id=%s error_type=%s", kind, resource_id, type(error).__name__
@@ -73,16 +87,15 @@ class Service:
 
     def start(self):
         with self.sessions.begin() as session:
-            for job in session.scalars(select(Job).where(Job.status == "processing")):
-                job.status = "queued"
-                document = session.get(Document, job.document_id)
-                document.status = "deleting" if job.kind == "delete" else "queued"
+            if not self.postgres:
+                self.reset_interrupted_jobs(session)
             if self.settings.profile == "local" and not session.scalar(select(Workspace)):
                 session.add(Workspace(name="Personal workspace"))
         from .auth import system_scope
 
         with system_scope():
-            self.indexes.startup()
+            if not self.postgres:
+                self.indexes.startup()
             self.gateway.seed_registry()
         if self.settings.worker_enabled:
             self.thread = threading.Thread(target=self.worker, name="nexus-ingestion", daemon=True)
@@ -116,6 +129,8 @@ class Service:
         digest = hashlib.sha256(content).hexdigest()
         with self.lock, self.sessions.begin() as session:
             self.repo.workspace(session, workspace_id)
+            if self.postgres:
+                session.get(Workspace, workspace_id, with_for_update=True)
             existing = session.scalar(
                 select(Document).where(Document.workspace_id == workspace_id, Document.content_hash == digest)
             )
@@ -132,7 +147,10 @@ class Service:
                 return {"document": record(existing), "job_id": job.id if job else None, "duplicate": True}
             self.capacity(session)
             key = f"{uid()}{extension}"
-            self.files.write(key, content)
+            if self.postgres:
+                self.files.write(key, content, session=session)
+            else:
+                self.files.write(key, content)
             try:
                 document = Document(
                     workspace_id=workspace_id,
@@ -151,7 +169,8 @@ class Service:
                 result = {"document": record(document), "job_id": job.id, "duplicate": False}
                 session.commit()
             except Exception:
-                self.files.delete(key)
+                if not self.postgres:
+                    self.files.delete(key)
                 raise
         self.wake.set()
         return result
@@ -196,6 +215,14 @@ class Service:
 
         # Only already-admitted persisted jobs may execute without an HTTP principal.
         with system_scope():
+            if self.postgres:
+                # Transaction-scoped across instances and safe with transaction poolers.
+                with self.sessions.begin() as coordinator:
+                    if not coordinator.scalar(sql_text("SELECT pg_try_advisory_xact_lock(834102, 2)")):
+                        return False
+                    with self.sessions.begin() as session:
+                        self.reset_interrupted_jobs(session)
+                    return self._process_one()
             return self._process_one()
 
     def _process_one(self):
@@ -213,8 +240,11 @@ class Service:
             try:
                 if kind == "delete":
                     self.index.delete_document(doc["workspace_id"], doc["id"])
-                    self.files.delete(doc["storage_key"])
+                    if not self.postgres:
+                        self.files.delete(doc["storage_key"])
                     with self.sessions.begin() as session:
+                        if self.postgres:
+                            self.files.delete(doc["storage_key"], session=session)
                         for generation in session.scalars(
                             select(IndexGeneration).where(IndexGeneration.workspace_id == doc["workspace_id"])
                         ):
@@ -277,11 +307,8 @@ class Service:
             embeddings or self.embeddings,
             config or self.settings,
         )
-        passages = bounded_extract(
-            self.files.path(doc["storage_key"]),
-            doc["extension"],
-            self.settings,
-        )
+        with self.files.materialize(doc["storage_key"]) as path:
+            passages = bounded_extract(path, doc["extension"], self.settings)
         spans, chunks = [], []
         for ordinal, passage in enumerate(passages):
             span_id = hashlib.sha256(f"{doc['version_id']}:span:{ordinal}".encode()).hexdigest()
@@ -311,9 +338,7 @@ class Service:
                         fingerprint=index.fingerprint,
                     )
                 )
-        index.collection.delete(
-            where={"$and": [{"workspace_id": doc["workspace_id"]}, {"document_id": doc["id"]}]}
-        )
+        index.clear_document(doc["workspace_id"], doc["id"])
         for offset in range(0, len(chunks), 32):
             batch = chunks[offset : offset + 32]
             vectors = embeddings.embed([c.text for c in batch])
@@ -385,6 +410,9 @@ class Service:
         on_delta=None,
         cancelled=None,
     ):
+        from .auth import principal
+
+        actor = principal.get()
         with self.lock, self.sessions() as session:
             self.repo.get(session, Chat, chat_id, workspace_id)
             provider = self.gateway.generator(session, workspace_id)
@@ -397,10 +425,10 @@ class Service:
                 provider.cancelled = cancelled
             results, diagnostic = self.rag.search(session, workspace_id, question, filters, options, chat_id)
             evidence = self.rag.evidence(results)
-        # No network request if retrieval finds insufficient evidence.
+        general_chat = bool(actor and actor.guest and not evidence and not diagnostic["authorized_documents"])
         answer = (
             provider.generate(diagnostic["standalone_query"], evidence)
-            if evidence
+            if evidence or general_chat
             else ("I don't have enough evidence in the indexed documents to answer this question.")
         )
         if cancelled and cancelled.is_set():
@@ -412,7 +440,7 @@ class Service:
             r"(?m)^\[(C[a-zA-Z0-9]+)\]\s*$" if provider.name == "mock" else r"\[(C[a-zA-Z0-9]+)\]"
         )
         cited = set(re.findall(citation_pattern, answer))
-        if cited - known:
+        if not general_chat and cited - known:
             raise ProviderError(
                 "The model returned an unknown citation. Answer was not saved; please retry.", 502
             )

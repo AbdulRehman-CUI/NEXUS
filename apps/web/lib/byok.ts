@@ -99,6 +99,10 @@ export type ProviderUsage = {
   }[];
   note: string;
 };
+export function activeModel(selection: AISelection | null) {
+  const config = selection?.active;
+  return config && (config.credential_configured || config.provider === "ollama") ? config : null;
+}
 export function configurationDraft(
   config?: AIConfiguration,
 ): ConfigurationDraft {

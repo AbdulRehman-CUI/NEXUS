@@ -48,6 +48,35 @@ class SQLiteLexicalIndex:
         return [(row.chunk_id, -row.rank) for row in rows]
 
 
+class PostgresLexicalIndex:
+    def search(self, session, query, workspace_id, fingerprint, document_ids, limit, title_weight):
+        expression = " OR ".join(re.findall(r'"[^"\n]+"|\w+', query, re.UNICODE)[:40])
+        if not expression or not document_ids:
+            return []
+        rows = session.execute(
+            text("""WITH query AS (SELECT websearch_to_tsquery('simple', :query) AS terms),
+            candidates AS (
+                SELECT c.id, to_tsvector('simple', c.text) AS body,
+                    to_tsvector('simple', d.title) AS title
+                FROM chunks c JOIN documents d ON c.document_id = d.id
+                WHERE c.workspace_id = :workspace AND c.fingerprint = :fingerprint
+                AND c.document_id = ANY(:documents)
+            )
+            SELECT id, ts_rank(body, terms) + :title_weight * ts_rank(title, terms) AS score
+            FROM candidates, query WHERE (body || title) @@ terms
+            ORDER BY score DESC, id LIMIT :limit"""),
+            {
+                "query": expression,
+                "workspace": workspace_id,
+                "fingerprint": fingerprint,
+                "documents": document_ids,
+                "limit": limit,
+                "title_weight": title_weight,
+            },
+        )
+        return [(row.id, row.score) for row in rows]
+
+
 def fuse(rankings, constant=60):
     scores = {}
     for ranking, weight in rankings:
@@ -122,7 +151,7 @@ def visible_document_condition():
 class RetrievalPipeline:
     def __init__(self, service):
         self.service = service
-        self.lexical = SQLiteLexicalIndex()
+        self.lexical = PostgresLexicalIndex() if service.postgres else SQLiteLexicalIndex()
         self.rerankers = {}
 
     def profile(self, session, workspace_id):

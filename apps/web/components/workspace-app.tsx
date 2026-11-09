@@ -39,8 +39,12 @@ const RichMessage = dynamic(() => import("./rich-message"), {
   loading: () => <span className="loader tiny" />,
 });
 import { AnswerFeedback } from "./answer-feedback";
-import type { GenerationPolicy } from "./release-controls";
-import type { AISelection } from "../lib/byok";
+import { useIdentity } from "./auth-gate";
+import { activeModel, type AISelection } from "../lib/byok";
+const ModelPicker = dynamic(
+  () => import("./byok-controls").then((module) => module.ModelPicker),
+  { loading: () => <Skeleton label="Loading model connections" /> },
+);
 const ByokControls = dynamic(
   () => import("./byok-controls").then((module) => module.ByokControls),
   { loading: () => <Skeleton label="Loading model connections" /> },
@@ -56,6 +60,7 @@ const DiagnosticsPanel = dynamic(
 
 type Mode =
   | "chat"
+  | "models"
   | "library"
   | "settings"
   | "vaults"
@@ -63,6 +68,7 @@ type Mode =
   | "diagnostics";
 const modeLabels: Record<Mode, string> = {
   chat: "Ask your knowledge",
+  models: "Models",
   library: "Document library",
   settings: "Settings & providers",
   vaults: "Obsidian vaults",
@@ -71,10 +77,12 @@ const modeLabels: Record<Mode, string> = {
 };
 
 export function WorkspaceApp({ mode }: { mode: Mode }) {
-  return <WorkspaceContent mode={mode} />;
+  const { generation } = useIdentity();
+  return <WorkspaceContent key={generation} mode={mode} />;
 }
 
 function WorkspaceContent({ mode }: { mode: Mode }) {
+  const { identity, sessionError, retry } = useIdentity();
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -97,6 +105,12 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
   const [libraryPage, setLibraryPage] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [settingsTab, setSettingsTab] = useState("models");
+  const canManageServer = identity?.profile === "local" || identity?.user?.admin;
+  const settingsTabs = [
+    ["models", "Models & privacy"],
+    ["retrieval", "Retrieval & indexes"],
+    ...(canManageServer ? [["defaults", "Server defaults"]] : []),
+  ];
   const [answering, setAnswering] = useState(false);
   const [aiSelection, setAiSelection] = useState<AISelection | null>(null);
   const [streamedText, setStreamedText] = useState("");
@@ -109,7 +123,6 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
   const [provider, setProvider] = useState<"mock" | "groq">("mock");
   const [freeConfirmed, setFreeConfirmed] = useState(false);
   const [consent, setConsent] = useState(false);
-  const [routeProvider, setRouteProvider] = useState("mock");
   const [retrieval, setRetrieval] = useState<ChatRetrieval>({
     filters: {},
     diagnostics: false,
@@ -120,6 +133,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const selection = useRef(0);
   const activeWorkspace = workspaces.find((w) => w.id === workspaceId);
+  const selectedModel = activeModel(aiSelection);
   const readyDocuments = documents.filter(
     (d) => d.status === "ready" && !d.needs_reindex,
   );
@@ -158,16 +172,14 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
       setAiSelection(null);
       setStreamedText("");
       try {
-        const [docs, history, route, ai] = await Promise.all([
+        const [docs, history, ai] = await Promise.all([
           api<Document[]>(`/api/workspaces/${id}/documents`),
           api<Chat[]>(`/api/workspaces/${id}/chats`),
-          api<GenerationPolicy>(`/api/workspaces/${id}/route-policy`),
           api<AISelection>(`/api/workspaces/${id}/ai-selection`),
         ]);
         if (sequence !== selection.current) return;
         setDocuments(docs);
         setChats(history);
-        setRouteProvider(route.provider);
         setAiSelection(ai);
         localStorage.setItem("nexus-workspace", id);
       } catch (cause) {
@@ -180,6 +192,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
   );
 
   useEffect(() => {
+    if (!identity) return;
     let cancelled = false;
     async function initialize() {
       try {
@@ -210,7 +223,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
     return () => {
       cancelled = true;
     };
-  }, [loadWorkspace, fail]);
+  }, [loadWorkspace, fail, identity]);
 
   useEffect(() => {
     if (
@@ -248,12 +261,8 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
 
   const reloadAI = useCallback(async () => {
     if (workspaceId) {
-      const [next, route] = await Promise.all([
-        api<AISelection>(`/api/workspaces/${workspaceId}/ai-selection`),
-        api<GenerationPolicy>(`/api/workspaces/${workspaceId}/route-policy`),
-      ]);
+      const next = await api<AISelection>(`/api/workspaces/${workspaceId}/ai-selection`);
       setAiSelection(next);
-      setRouteProvider(route.provider);
       setConsent(next.workspace_cloud_allowed);
       setWorkspaces((spaces) =>
         spaces.map((space) =>
@@ -338,7 +347,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
 
   async function send(event: React.FormEvent) {
     event.preventDefault();
-    if (!question.trim() || busy || !workspaceId) return;
+    if (!question.trim() || busy || !workspaceId || !selectedModel) return;
     const content = question.trim();
     const controller = new AbortController();
     generationAbort.current = controller;
@@ -628,7 +637,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
       </a>
       <NavigationRail
         mode={mode}
-        busy={busy}
+        busy={busy || !identity}
         workspaces={workspaces}
         workspaceId={workspaceId}
         onWorkspace={(id) => {
@@ -637,7 +646,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
           );
           void loadWorkspace(id);
         }}
-        onCreate={newWorkspace}
+        onCreate={identity?.guest ? undefined : newWorkspace}
         onHistory={() => {
           if (matchMedia("(max-width:900px)").matches) setSearchOpen(true);
           else setHistoryOpen((value) => !value);
@@ -645,7 +654,6 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
         onSearch={() => setSearchOpen(true)}
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
-        onError={fail}
       />
       {mode === "chat" && (
         <aside
@@ -717,7 +725,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
         </aside>
       )}
       <div className="main-column">
-        <div className="workspace-context">
+        <header className="workspace-context">
           <button
             className="icon-button mobile-toggle"
             aria-label="Open navigation"
@@ -731,26 +739,26 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
             {activeWorkspace?.name || "Your workspace"}
           </span>
           <span className="context-section">{modeLabels[mode]}</span>
-          <button
-            className="provider-badge"
-            title="Configure this workspace model"
-            onClick={() => router.push("/settings")}
+          <Link
+            className="button primary select-llm"
+            href="/models"
+            aria-label={selectedModel ? `Change model: ${selectedModel.model}` : "Select LLM"}
           >
-            <span className="status-dot" />
-            {aiSelection?.unavailable
-              ? "Choose a model"
-              : aiSelection?.active
-                ? `${aiSelection.active.name} · ${aiSelection.active.provider === "ollama" ? "local" : "cloud"}`
-                : routeProvider === "mock"
-                  ? "Offline demo"
-                  : `${routeProvider} · ${routeProvider === "ollama" ? "local" : "remote"}`}
-          </button>
-        </div>
+            <Icon name="spark" size={16} />
+            <span>{selectedModel?.model ?? "Select LLM"}</span>
+          </Link>
+        </header>
         <PageTransition>
           <main
             id="main"
             className={mode === "chat" ? "chat-main" : "page-main"}
           >
+            {sessionError && (
+              <div className="alert error" role="alert">
+                <span>{sessionError}</span>
+                <button className="button secondary" onClick={retry}>Retry connection</button>
+              </div>
+            )}
             {error && (
               <div className="alert error" role="alert">
                 <span>{error}</span>
@@ -780,33 +788,50 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                 Opening original evidence…
               </div>
             )}
-            {loading ? (
+            {loading && mode !== "chat" && mode !== "models" ? (
               <div className="loading-state" role="status">
                 <Skeleton />
               </div>
-            ) : !workspaceId ? (
+            ) : !workspaceId && identity && !loading ? (
               <div className="page-content">
                 <span className="eyebrow">WELCOME TO NEXUS</span>
                 <h1>Create your first workspace.</h1>
                 <p>
                   Begin with a private workspace, then add a PDF, Markdown, DOCX
-                  or the included synthetic vault. The default offline mode
-                  quotes source passages without a key.
+                  or the included synthetic vault.
                 </p>
                 <button className="button primary" onClick={newWorkspace}>
                   Create workspace
                 </button>
               </div>
+            ) : mode === "models" ? (
+              <div className="page-content settings-content">
+                <div className="page-heading">
+                  <div>
+                    <h1>Select an LLM</h1>
+                    <p>Connect a provider and choose the model for this workspace.</p>
+                  </div>
+                </div>
+                {workspaceId && aiSelection ? (
+                  <ModelPicker
+                    key={workspaceId}
+                    workspaceId={workspaceId}
+                    selection={aiSelection}
+                    onChanged={reloadAI}
+                    onSaved={() => router.push("/")}
+                  />
+                ) : !sessionError && <Skeleton label="Opening your workspace" />}
+              </div>
             ) : mode === "chat" ? (
               <>
-                <RetrievalControls
+                {workspaceId && <RetrievalControls
                   key={workspaceId}
                   workspaceId={workspaceId}
                   documents={documents}
                   disabled={busy}
                   onChange={setRetrieval}
                   onError={fail}
-                />
+                />}
                 <div
                   className="conversation"
                   ref={conversation}
@@ -1093,84 +1118,11 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                         <Icon name="plus" size={17} />
                         <span>Add sources</span>
                       </Link>
-                      <button
-                        type="button"
-                        className="composer-model"
-                        onClick={() => router.push("/settings")}
-                        title="Change model in workspace settings"
-                      >
+                      <Link href="/models" className="composer-model">
                         <Icon name="spark" size={13} />
-                        {aiSelection?.active
-                          ? aiSelection.active.name
-                          : routeProvider === "mock"
-                            ? "Extractive demo"
-                            : routeProvider}
+                        {selectedModel?.model ?? "Select an LLM to start chatting"}
                         <Icon name="chevron" size={12} />
-                      </button>
-                      <label className="composer-selector">
-                        <span className="sr-only">Active personal model</span>
-                        <select
-                          aria-label="Active personal model"
-                          disabled={busy || !workspaceId}
-                          value={
-                            aiSelection?.selection === null
-                              ? "workspace"
-                              : (aiSelection?.selection ?? "default")
-                          }
-                          onChange={async (event) => {
-                            const value = event.target.value;
-                            setBusy(true);
-                            try {
-                              await api(
-                                `/api/workspaces/${workspaceId}/ai-selection`,
-                                {
-                                  method: "PUT",
-                                  body: JSON.stringify(
-                                    value === "default"
-                                      ? { use_default: true }
-                                      : {
-                                          configuration_id:
-                                            value === "workspace"
-                                              ? null
-                                              : value,
-                                        },
-                                  ),
-                                },
-                              );
-                              await reloadAI();
-                            } catch (error) {
-                              fail(error);
-                            } finally {
-                              setBusy(false);
-                            }
-                          }}
-                        >
-                          <option value="default">Personal default</option>
-                          <option value="workspace">Workspace model</option>
-                          {aiSelection?.unavailable &&
-                            aiSelection.selection &&
-                            aiSelection.selection !== "default" && (
-                              <option value={aiSelection.selection} disabled>
-                                Removed · choose a model
-                              </option>
-                            )}
-                          {aiSelection?.configurations.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} ·{" "}
-                              {c.provider === "ollama" ? "Local" : "Cloud"}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <span className="composer-hint">
-                        {aiSelection?.active
-                          ? aiSelection.active.provider === "ollama"
-                            ? "Local · on this server"
-                            : "Cloud · retrieved excerpts shared"
-                          : routeProvider === "mock"
-                            ? "Offline · evidence extraction"
-                            : "Cloud · retrieved excerpts shared"}
-                      </span>
+                      </Link>
                       {answering && (
                         <button
                           type="button"
@@ -1191,7 +1143,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                           busy ||
                           !question.trim() ||
                           !workspaceId ||
-                          aiSelection?.unavailable
+                          !selectedModel
                         }
                         aria-label="Send question"
                       >
@@ -1200,16 +1152,14 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                     </div>
                   </form>
                   <p className="composer-disclaimer">
-                    Always follow the evidence. Answers may be incomplete.{" "}
-                    {settings?.generation_provider === "groq" &&
-                      !activeWorkspace?.cloud_opt_in && (
-                        <Link href="/settings">Cloud opt-in required.</Link>
-                      )}
+                    {identity?.guest && !readyDocuments.length
+                      ? "Add sources for answers with citations. Without sources, the model answers directly."
+                      : "Always follow the evidence. Answers may be incomplete."}
                   </p>
                 </div>
               </>
             ) : mode === "diagnostics" ? (
-              <DiagnosticsPanel workspaceId={workspaceId} onError={fail} />
+              <DiagnosticsPanel workspaceId={workspaceId} onError={fail} guest={!!identity?.guest} />
             ) : mode === "vaults" ? (
               <VaultManager
                 key={workspaceId}
@@ -1465,11 +1415,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                   role="tablist"
                   aria-label="Settings sections"
                 >
-                  {[
-                    ["models", "Models & privacy"],
-                    ["retrieval", "Retrieval & indexes"],
-                    ["defaults", "Server defaults"],
-                  ].map(([id, label]) => (
+                  {settingsTabs.map(([id, label]) => (
                     <button
                       key={id}
                       role="tab"
@@ -1479,17 +1425,17 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                       id={`tab-${id}`}
                       onClick={() => setSettingsTab(id)}
                       onKeyDown={(event) => {
-                        const ids = ["models", "retrieval", "defaults"];
+                        const ids = settingsTabs.map(([tab]) => tab);
                         const index = ids.indexOf(id);
                         const next =
                           event.key === "ArrowRight"
-                            ? ids[(index + 1) % 3]
+                            ? ids[(index + 1) % ids.length]
                             : event.key === "ArrowLeft"
-                              ? ids[(index + 2) % 3]
+                              ? ids[(index + ids.length - 1) % ids.length]
                               : event.key === "Home"
                                 ? ids[0]
                                 : event.key === "End"
-                                  ? ids[2]
+                                  ? ids.at(-1)
                                   : null;
                         if (next) {
                           event.preventDefault();
@@ -1520,6 +1466,12 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                   aria-labelledby="tab-models"
                   hidden={settingsTab !== "models"}
                 >
+                  {identity?.guest ? (
+                    <section className="settings-card">
+                      <h2>Model and provider</h2>
+                      <Link className="button primary" href="/models">Manage your model</Link>
+                    </section>
+                  ) : <>
                   <ByokControls
                     key={workspaceId}
                     workspaceId={workspaceId}
@@ -1536,8 +1488,9 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                       onError={fail}
                     />
                   </details>
+                  </>}
                 </div>
-                <div
+                {canManageServer && <div
                   role="tabpanel"
                   id="settings-defaults"
                   aria-labelledby="tab-defaults"
@@ -1718,7 +1671,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                       </button>
                     </div>
                   </form>
-                </div>
+                </div>}
                 <p className="page-note">
                   {settings?.security} Server deployments require TLS, secure
                   cookies and explicitly configured hosts/origins.

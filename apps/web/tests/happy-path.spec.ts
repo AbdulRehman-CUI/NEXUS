@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openLocalEvidenceChat } from "./local-chat-fixture";
 
 const api = "http://localhost:8000";
 
@@ -30,11 +31,9 @@ test("upload PDF and Markdown, ask, open evidence, inspect history and mobile UI
   await expect(page.locator(".document-status.ready")).toHaveCount(2, {
     timeout: 45000,
   });
-  await page.getByRole("link", { name: "Ask your knowledge" }).click();
-  await page
-    .getByLabel("Ask a question about your documents")
-    .fill("When is the Aurora launch and readiness review?");
-  await page.getByRole("button", { name: "Send question" }).click();
+  await openLocalEvidenceChat(page, request, workspace.id, {
+    content: "When is the Aurora launch and readiness review?",
+  });
   await expect(page.locator(".message.assistant")).toContainText("November");
   await expect(page.locator(".inline-citation").first()).toBeVisible();
   await page.locator(".inline-citation").first().click();

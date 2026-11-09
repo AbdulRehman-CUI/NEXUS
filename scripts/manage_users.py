@@ -3,6 +3,7 @@
 import argparse
 import getpass
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
@@ -10,9 +11,16 @@ from alembic import command
 from alembic.config import Config
 from nexus.auth import add_user, hash_password
 from nexus.config import Settings
-from nexus.database import AuthSession, Membership, User, Workspace, database
+from nexus.database import (
+    AuthSession,
+    GuestSession,
+    Membership,
+    User,
+    Workspace,
+    database,
+)
 from nexus.lease import DataLease
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 
 def main():
@@ -29,11 +37,16 @@ def main():
     args = parser.parse_args()
     settings = Settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    lease = DataLease(settings.data_dir)
+    database_url = settings.database_url.get_secret_value()
+    lease = nullcontext() if database_url else DataLease(settings.data_dir)
     lease.__enter__()
-    engine, sessions = database(settings.data_dir.resolve() / "nexus.sqlite3")
+    engine, sessions = database(
+        settings.data_dir.resolve() / "nexus.sqlite3", database_url
+    )
     config = Config(str(Path(__file__).resolve().parents[1] / "apps/api/alembic.ini"))
     with engine.begin() as connection:
+        if database_url:
+            connection.execute(text("SELECT pg_advisory_xact_lock(834102, 1)"))
         config.attributes["connection"] = connection
         command.upgrade(config, "head")
     with sessions.begin() as session:
@@ -66,7 +79,10 @@ def main():
                 select(Workspace).where(
                     ~select(Membership.workspace_id)
                     .where(Membership.workspace_id == Workspace.id)
-                    .exists()
+                    .exists(),
+                    ~select(GuestSession.workspace_id)
+                    .where(GuestSession.workspace_id == Workspace.id)
+                    .exists(),
                 )
             ):
                 session.add(

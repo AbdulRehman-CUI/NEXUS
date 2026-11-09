@@ -3,17 +3,20 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     create_engine,
     event,
 )
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -247,6 +250,28 @@ class AuthSession(Base):
     expires_at: Mapped[int] = mapped_column(Integer)
 
 
+class GuestSession(Base):
+    __tablename__ = "guest_sessions"
+    token_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), unique=True)
+    expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
+
+
+class StoredFile(Base):
+    __tablename__ = "stored_files"
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class StoredVector(Base):
+    __tablename__ = "stored_vectors"
+    namespace: Mapped[str] = mapped_column(String, primary_key=True)
+    chunk_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    embedding: Mapped[list] = mapped_column(JSON)
+
+
 class ModelRegistry(Base):
     __tablename__ = "model_registry"
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -345,7 +370,19 @@ class Feedback(Base):
     created_at: Mapped[str] = mapped_column(String, default=now)
 
 
-def database(path):
+def database(path, database_url=""):
+    if database_url:
+        url = make_url(database_url)
+        if url.get_backend_name() not in {"postgres", "postgresql"}:
+            raise ValueError("NEXUS_DATABASE_URL must be a PostgreSQL URL.")
+        engine = create_engine(
+            url.set(drivername="postgresql+psycopg"),
+            pool_pre_ping=True,
+            pool_size=4,
+            max_overflow=12,
+            hide_parameters=True,
+        )
+        return engine, sessionmaker(engine, expire_on_commit=False)
     engine = create_engine(
         f"sqlite:///{path.as_posix()}", connect_args={"check_same_thread": False, "timeout": 30}
     )

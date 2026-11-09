@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openLocalEvidenceChat } from "./local-chat-fixture";
 
 test("vault import, graph navigation, filtered chat, snapshot revision and index rollback", async ({
   page,
@@ -75,10 +76,12 @@ test("vault import, graph navigation, filtered chat, snapshot revision and index
     .selectOption(vaults[0].id);
   await page.getByLabel("Tags (match any)").fill("launch");
   await page.getByLabel("Diagnostics", { exact: true }).check();
-  await page
-    .getByLabel("Ask a question about your documents")
-    .fill("When does Aurora launch?");
-  await page.getByRole("button", { name: "Send question" }).click();
+  await openLocalEvidenceChat(page, request, workspace.id, {
+    content: "When does Aurora launch?",
+    filters: { vault_id: vaults[0].id, tags: ["launch"] },
+    options: { mode: "keyword" },
+    diagnostics: true,
+  });
   await expect(page.locator(".message.assistant")).toContainText("November");
   await page.locator(".message-diagnostics summary").click();
   await expect(page.locator(".message-diagnostics")).toContainText("lexical_0");

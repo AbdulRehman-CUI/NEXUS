@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("server login, private workspace, member permissions and logout", async ({
+test("existing server sessions retain private workspace and membership access", async ({
   page,
 }) => {
   test.skip(
@@ -9,37 +9,23 @@ test("server login, private workspace, member permissions and logout", async ({
   );
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  const apiURL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+  const login = await page.request.post(`${apiURL}/api/auth/login`, {
+    data: { username: "release-owner", password: "Synthetic owner password 123" },
+  });
+  expect(login.ok()).toBe(true);
+  const { csrf } = await login.json();
   await page.goto("/");
-  await page.getByLabel("Username", { exact: true }).fill("release-owner");
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("Synthetic owner password 123");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Account and appearance", exact: true })
-    .click();
-  await expect(
-    page.getByText("Signed in as release-owner", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Close panel", exact: true }).click();
+  await expect(page.getByLabel("Username", { exact: true })).toHaveCount(0);
+  const switchWorkspace = page.getByRole("button", { name: "Switch workspace", exact: true });
+  await expect(switchWorkspace).toBeEnabled();
+  await switchWorkspace.click();
   page.once("dialog", (dialog) => dialog.accept("Private server workspace"));
-  if (
-    await page
-      .getByRole("heading", { name: "Create your first workspace." })
-      .isVisible()
-  ) {
-    await page
-      .locator("#main")
-      .getByRole("button", { name: "Create workspace", exact: true })
-      .click();
-  } else {
-    await page
-      .getByRole("button", { name: "Switch workspace", exact: true })
-      .click();
-    await page
-      .getByRole("button", { name: "Create workspace", exact: true })
-      .click();
-  }
+  await page
+    .getByRole("dialog", { name: "Workspace selector" })
+    .getByRole("button", { name: "Create workspace", exact: true })
+    .click();
+  await expect(page.locator(".context-workspace")).toHaveText("Private server workspace");
   await expect(
     page.getByRole("heading", { name: /Your knowledge/ }),
   ).toBeVisible();
@@ -76,12 +62,14 @@ test("server login, private workspace, member permissions and logout", async ({
     path: "../../artifacts/phase3-server-members.png",
     fullPage: true,
   });
-  await page
-    .getByRole("button", { name: "Account and appearance", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  const logout = await page.request.post(`${apiURL}/api/auth/logout`, {
+    headers: { "X-CSRF-Token": csrf },
+  });
+  expect(logout.status()).toBe(204);
+  expect((await page.request.get(`${apiURL}/api/workspaces`)).status()).toBe(401);
+  await page.goto("/");
   await expect(
-    page.getByRole("button", { name: "Sign in", exact: true }),
+    page.getByRole("heading", { name: /Your knowledge/ }),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });

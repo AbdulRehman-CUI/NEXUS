@@ -4142,6 +4142,43 @@ select:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.select-llm {
+  margin-inline-start: auto;
+  max-width: min(280px, 48vw);
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.select-llm svg {
+  flex: none;
+}
+.select-llm span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-picker {
+  max-width: 650px;
+}
+.model-picker fieldset {
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+.model-picker fieldset > label,
+.model-picker details {
+  width: 100%;
+  min-width: 0;
+}
+.model-picker select {
+  width: 100%;
+}
+.model-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .composer-tools {
   flex-wrap: wrap;
 }

@@ -131,6 +131,11 @@ def restore(archive_path, target):
             with sqlite3.connect(target / "nexus.sqlite3") as connection:
                 if connection.execute("SELECT name FROM sqlite_master WHERE name='auth_sessions'").fetchone():
                     connection.execute("DELETE FROM auth_sessions")
+                if connection.execute(
+                    "SELECT name FROM sqlite_master WHERE name='guest_sessions'"
+                ).fetchone():
+                    # Keep the nonce tombstones so a retry cannot restore access.
+                    connection.execute("UPDATE guest_sessions SET expires_at = 0")
             marker.unlink()
     return {
         "restored": True,

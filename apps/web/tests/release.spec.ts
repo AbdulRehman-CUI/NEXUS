@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openLocalEvidenceChat } from "./local-chat-fixture";
 
 test("workspace route persistence, diagnostics, comparison, feedback and portable settings", async ({
   page,
@@ -47,11 +48,7 @@ test("workspace route persistence, diagnostics, comparison, feedback and portabl
     .click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("nexus-settings-v1.json");
-  await page.goto("/");
-  await page
-    .getByRole("textbox", { name: "Ask a question about your documents" })
-    .fill("RELEASEPROOF backup");
-  await page.getByRole("button", { name: "Send question" }).click();
+  await openLocalEvidenceChat(page, request, workspace.id, { content: "RELEASEPROOF backup" });
   await expect(page.locator(".message.assistant")).toHaveCount(1, {
     timeout: 30000,
   });

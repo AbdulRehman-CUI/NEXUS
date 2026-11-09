@@ -223,6 +223,10 @@ class ModelGateway:
 
     def seed_registry(self):
         with self.service.sessions.begin() as session:
+            if self.service.postgres:
+                from sqlalchemy import text
+
+                session.execute(text("SELECT pg_advisory_xact_lock(834102, 3)"))
             for provider in GenerationPolicy.model_fields["provider"].annotation.__args__:
                 session.merge(
                     ModelRegistry(
@@ -246,7 +250,7 @@ class ModelGateway:
             for kind, providers in {
                 "embedding": ["onnx", "hash", "sentence-transformers"],
                 "reranking": ["none", "cross-encoder"],
-                "vector": ["chroma"],
+                "vector": ["postgresql" if self.service.postgres else "chroma"],
             }.items():
                 for provider in providers:
                     session.merge(
@@ -267,10 +271,14 @@ class ModelGateway:
         return GenerationPolicy.model_validate(row.configuration) if row else None
 
     def generator(self, session, workspace_id):
+        from .auth import principal
+
         workspace = self.service.repo.workspace(session, workspace_id)
         personal = self.service.byok.generator(session, workspace_id)
         if personal is not None:
             return personal
+        if principal.get() and principal.get().guest:
+            raise HTTPException(409, "Select an LLM to start chatting.")
         policy = self.policy(session, workspace_id)
         if policy is None:
             legacy = generation_provider(self.service.settings)

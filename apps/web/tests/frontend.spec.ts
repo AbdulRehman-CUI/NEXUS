@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { showTestModel } from "./local-chat-fixture";
 
 const api = "http://127.0.0.1:8000";
 let workspaceId: string;
@@ -114,7 +115,7 @@ test("rail physically expands without content movement; pin, theme, tabs and one
     .getByRole("button", { name: "Unpin navigation", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Account and appearance", exact: true })
+    .getByRole("button", { name: "Appearance", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Switch to light appearance" })
@@ -316,6 +317,7 @@ test("large document and conversation collections keep DOM bounded and remain se
 test("reading position survives answer completion and stop-waiting state is explicit", async ({
   page,
 }) => {
+  await showTestModel(page);
   const long = Array.from(
     { length: 60 },
     (_, i) =>

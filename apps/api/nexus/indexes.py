@@ -7,7 +7,6 @@ from sqlalchemy import select
 from .contracts import IndexConfiguration
 from .database import Chunk, Document, IndexGeneration, Workspace, uid
 from .providers import embedding_provider
-from .vectors import ChromaIndex
 
 
 class IndexManager:
@@ -46,8 +45,7 @@ class IndexManager:
                 update=config.model_dump(exclude={"normalization", "preprocessing"})
             )
             embeddings = embedding_provider(settings)
-            index = ChromaIndex(
-                settings.data_dir / "chroma",
+            index = self.service.vector_index(
                 embeddings.fingerprint,
                 config.chunk_size,
                 config.chunk_overlap,
@@ -65,6 +63,8 @@ class IndexManager:
     def _ensure(self, workspace_id):
         with self.service.sessions.begin() as session:
             self.service.repo.workspace(session, workspace_id)
+            if self.service.postgres:
+                session.get(Workspace, workspace_id, with_for_update=True)
             active = session.scalar(
                 select(IndexGeneration).where(
                     IndexGeneration.workspace_id == workspace_id, IndexGeneration.active.is_(True)
@@ -81,8 +81,8 @@ class IndexManager:
                     Document.fingerprint.is_not(None),
                 )
             )
-            fingerprint, namespace = index.fingerprint, index.collection.name
-            if existing and existing.fingerprint != fingerprint:
+            fingerprint, namespace = index.fingerprint, index.namespace
+            if not self.service.postgres and existing and existing.fingerprint != fingerprint:
                 # Phase 1 stored configuration in Chroma, not SQL. Adopt that namespace before building a replacement.
                 collection = index.client.get_collection(f"nexus_{existing.fingerprint}")
                 stored = json.loads(collection.metadata["configuration"])
@@ -119,7 +119,7 @@ class IndexManager:
             )
             session.add(generation)
             session.flush()
-            if namespace == index.collection.name:
+            if namespace == index.namespace:
                 self.adapters[generation.id] = (self.service.embeddings, index)
             return generation
 
@@ -142,9 +142,7 @@ class IndexManager:
                             )
                         )
                     )
-                actual = set(
-                    active_index.collection.get(where={"workspace_id": workspace_id}, include=[])["ids"]
-                )
+                actual = set(active_index.ids(workspace_id))
                 if expected != actual:
                     raise ValueError("Active vector/SQL coverage mismatch")
             except Exception as error:
@@ -177,8 +175,7 @@ class IndexManager:
             )
             embeddings = embedding_provider(settings)
             namespace = f"nexus_{uid().replace('-', '')}"
-            index = ChromaIndex(
-                settings.data_dir / "chroma",
+            index = self.service.vector_index(
                 embeddings.fingerprint,
                 config.chunk_size,
                 config.chunk_overlap,
@@ -260,9 +257,7 @@ class IndexManager:
                     live = {d.id: d.version_id for d in current}
                     # Remove deleted/replaced documents from the unfinished namespace before activation.
                     for stale in set(stored.checkpoint) - set(live):
-                        index.collection.delete(
-                            where={"$and": [{"workspace_id": stored.workspace_id}, {"document_id": stale}]}
-                        )
+                        index.clear_document(stored.workspace_id, stale)
                     stored.checkpoint = {k: v for k, v in stored.checkpoint.items() if k in live}
                     expected = set(
                         session.scalars(
@@ -273,9 +268,7 @@ class IndexManager:
                             )
                         )
                     )
-                    actual = set(
-                        index.collection.get(where={"workspace_id": stored.workspace_id}, include=[])["ids"]
-                    )
+                    actual = set(index.ids(stored.workspace_id))
                     if actual != expected:
                         raise ValueError("Index sanity check failed: SQL and vector chunk IDs differ.")
                     self.activate(session, stored)

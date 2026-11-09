@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import type { Workspace } from "../lib/api";
 import { Icon } from "./icon";
 import { navigateWithTransition } from "./motion-system";
-import { useIdentity } from "./auth-gate";
 import { usePreference } from "../lib/preferences";
 
 const destinations = [
@@ -31,22 +30,19 @@ export function NavigationRail({
   onSearch,
   mobileOpen,
   onMobileClose,
-  onError,
 }: {
   mode: string;
   busy: boolean;
   workspaces: Workspace[];
   workspaceId: string;
   onWorkspace: (id: string) => void;
-  onCreate: () => void;
+  onCreate?: () => void;
   onHistory: () => void;
   onSearch: () => void;
   mobileOpen: boolean;
   onMobileClose: () => void;
-  onError: (cause: unknown) => void;
 }) {
   const router = useRouter();
-  const { identity, logout } = useIdentity();
   const [pinnedValue, savePinned] = usePreference("nexus-rail-pinned", "false");
   const pinned = pinnedValue === "true";
   const setPinned = (value: boolean) => savePinned(String(value));
@@ -178,13 +174,11 @@ export function NavigationRail({
           </button>
           <button
             className="rail-item"
-            aria-label="Account and appearance"
+            aria-label="Appearance"
             onClick={() => setPanel("account")}
           >
-            <span className="profile-orb">
-              {identity?.user?.username.slice(0, 1).toUpperCase() || "Y"}
-            </span>
-            <span className="rail-label">Account & appearance</span>
+            <span className="rail-icon"><Icon name="sun" /></span>
+            <span className="rail-label">Appearance</span>
           </button>
         </div>
       </aside>
@@ -242,7 +236,7 @@ export function NavigationRail({
             setPanel("account");
           }}
         >
-          Account & appearance
+          Appearance
         </button>
       </dialog>
       <dialog
@@ -251,7 +245,7 @@ export function NavigationRail({
         aria-label={
           panel === "workspace"
             ? "Workspace selector"
-            : "Account and appearance"
+            : "Appearance"
         }
         onCancel={() => setPanel(null)}
         onClick={(event) => {
@@ -259,7 +253,7 @@ export function NavigationRail({
         }}
       >
         <header>
-          <h2>{panel === "workspace" ? "Your workspaces" : "Your account"}</h2>
+          <h2>{panel === "workspace" ? "Your workspaces" : "Appearance"}</h2>
           <button
             className="icon-button"
             aria-label="Close panel"
@@ -287,7 +281,7 @@ export function NavigationRail({
                 ))}
               </select>
             </label>
-            <button
+            {onCreate && <button
               className="button primary"
               onClick={() => {
                 setPanel(null);
@@ -296,20 +290,10 @@ export function NavigationRail({
             >
               <Icon name="plus" size={16} />
               Create workspace
-            </button>
+            </button>}
           </>
         ) : (
           <>
-            <p>
-              {identity?.user
-                ? `Signed in as ${identity.user.username}`
-                : "Local single-user workspace"}
-            </p>
-            <p className="field-help">
-              {identity?.profile === "server"
-                ? "Authenticated sessions · workspace roles enforced"
-                : "On-device storage · loopback access"}
-            </p>
             <button
               className="button secondary"
               onClick={() => {
@@ -324,14 +308,6 @@ export function NavigationRail({
                 ? "Switch to light appearance"
                 : "Switch to dark appearance"}
             </button>
-            {identity?.profile === "server" && (
-              <button
-                className="button secondary"
-                onClick={() => logout().catch(onError)}
-              >
-                Sign out
-              </button>
-            )}
           </>
         )}
       </dialog>

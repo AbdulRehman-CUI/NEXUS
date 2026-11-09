@@ -11,10 +11,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 
-from .auth import principal, required_role
+from .auth import authorize, principal, required_role
 from .byok import ConfigurationInput, owner_id
 from .contracts import ChatInput
-from .database import Chat, ProviderConfiguration, ProviderSelection, ProviderUsage, now, uid
+from .database import Chat, ProviderConfiguration, ProviderSelection, ProviderUsage, Workspace, now, uid
 from .provider_transport import PROVIDERS, ProviderFailure, ProviderTransport, base_url
 from .providers import ProviderError
 from .service import record
@@ -54,12 +54,16 @@ def configurations(request: Request, response: Response):
                 )
             ),
             "configurations": [svc.byok.public(row) for row in rows],
-            "providers": PROVIDERS,
+            "providers": [
+                provider
+                for provider in PROVIDERS
+                if provider["id"] != "ollama" or not (principal.get() and principal.get().guest)
+            ],
             "credential_storage": {
                 "enabled": svc.byok.vault.enabled,
                 "message": "AES-256-GCM; master key stored outside the database."
                 if svc.byok.vault.enabled
-                else "Cloud credential storage is disabled until the operator configures a secure master key. Local Ollama remains available.",
+                else "Cloud credential storage is disabled until the operator configures a secure master key.",
             },
         }
 
@@ -73,21 +77,29 @@ class PreviewInput(ConfigurationInput):
     configuration_id: str | None = None
 
 
-@router.post("/me/provider-configurations/preview")
-def preview_configuration(body: PreviewInput, request: Request):
-    svc = service(request)
+def preview_transport(svc, body):
     target = base_url(svc.settings, body.provider, body.base_url)
     key = body.api_key.get_secret_value() if body.api_key else ""
+    revision = None
     if body.configuration_id:
         with svc.sessions() as session:
             row = svc.byok.get(session, body.configuration_id)
+            revision = row.revision
             if row.configuration["provider"] != body.provider or row.configuration["destination"] != target:
                 raise HTTPException(
                     409, "A saved credential cannot be tested at another provider or endpoint."
                 )
-            if not key and body.provider != "ollama":
+            if not key and body.provider != "ollama" and row.encrypted_key:
                 key = svc.byok.vault.decrypt(row)
-    adapter = ProviderTransport(svc.settings, body.model_dump(exclude={"api_key", "configuration_id"}), key)
+    adapter = ProviderTransport(
+        svc.settings, body.model_dump(exclude={"api_key", "configuration_id", "allow_workspace_cloud"}), key
+    )
+    return adapter, revision
+
+
+@router.post("/me/provider-configurations/preview")
+def preview_configuration(body: PreviewInput, request: Request):
+    adapter, _ = preview_transport(service(request), body)
     try:
         models, connection = adapter.check()
         return {"models": models, "connection": connection}
@@ -104,7 +116,7 @@ def update_configuration(identifier: str, body: ConfigurationInput, request: Req
 def delete_configuration(identifier: str, request: Request):
     svc = service(request)
     with svc.lock, svc.sessions.begin() as session:
-        row = svc.byok.get(session, identifier)
+        row = svc.byok.get(session, identifier, lock=True)
         # A tombstone keeps selected/default routes blocked instead of silently falling back.
         row.deleted, row.encrypted_key, row.models, row.connection = True, None, [], {}
         row.revision = uid()
@@ -114,7 +126,7 @@ def delete_configuration(identifier: str, request: Request):
 def delete_credential(identifier: str, request: Request):
     svc = service(request)
     with svc.lock, svc.sessions.begin() as session:
-        row = svc.byok.get(session, identifier)
+        row = svc.byok.get(session, identifier, lock=True)
         row.encrypted_key, row.models, row.revision = None, [], uid()
         row.updated_at = now()
         row.connection = {
@@ -199,6 +211,44 @@ class SelectionInput(BaseModel):
     use_default: bool = False
 
 
+class UseConfigurationInput(PreviewInput):
+    allow_workspace_cloud: bool = False
+
+
+@router.put("/workspaces/{workspace_id}/ai-selection/configuration")
+def save_and_select(workspace_id: str, body: UseConfigurationInput, request: Request):
+    svc = service(request)
+    with svc.sessions() as session:
+        workspace = svc.repo.workspace(session, workspace_id)
+        if body.allow_workspace_cloud and not workspace.cloud_opt_in:
+            authorize(svc.settings, session, workspace_id, "owner")
+    adapter, revision = preview_transport(svc, body)
+    models, connection = adapter.check()
+    if not any(model["id"] == body.model for model in models):
+        raise HTTPException(422, "Choose a model currently listed by this provider.")
+    config = ConfigurationInput.model_validate(
+        body.model_dump(exclude={"configuration_id", "allow_workspace_cloud"})
+    )
+    owner = owner_id(svc.settings)
+    with svc.lock, svc.sessions.begin() as session:
+        workspace = session.get(Workspace, workspace_id, with_for_update=svc.postgres)
+        svc.repo.workspace(session, workspace_id)
+        if body.allow_workspace_cloud and not workspace.cloud_opt_in:
+            authorize(svc.settings, session, workspace_id, "owner")
+            workspace.cloud_opt_in = True
+        saved = svc.byok.save(
+            config,
+            body.configuration_id,
+            transaction=session,
+            models=models,
+            connection={**connection, "checked_at": now()},
+            revision=revision,
+        )
+        svc.byok.validate(session, workspace_id, svc.byok.get(session, saved["id"]))
+        session.merge(ProviderSelection(owner=owner, workspace_id=workspace_id, configuration_id=saved["id"]))
+        return saved
+
+
 @router.get("/workspaces/{workspace_id}/ai-selection")
 def selection(workspace_id: str, request: Request):
     svc, owner = service(request), owner_id(request.app.state.service.settings)
@@ -235,6 +285,8 @@ def select_model(workspace_id: str, body: SelectionInput, request: Request):
     owner = owner_id(svc.settings)
     with svc.lock, svc.sessions.begin() as session:
         svc.repo.workspace(session, workspace_id)
+        if svc.postgres:
+            session.get(Workspace, workspace_id, with_for_update=True)
         if body.configuration_id:
             svc.byok.validate(session, workspace_id, svc.byok.get(session, body.configuration_id))
         current = session.get(ProviderSelection, (owner, workspace_id))
@@ -276,7 +328,7 @@ def usage(request: Request):
             total, unknown = session.execute(
                 select(
                     func.coalesce(func.sum(ProviderUsage.cost_usd), 0),
-                    func.sum(ProviderUsage.cost_usd.is_(None)),
+                    func.count().filter(ProviderUsage.cost_usd.is_(None)),
                 ).where(
                     ProviderUsage.owner == owner,
                     ProviderUsage.configuration_id == row.id,

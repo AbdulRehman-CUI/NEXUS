@@ -9,6 +9,7 @@ import {
   type ConfigurationDraft,
   type Connection,
   type ProviderCatalog,
+  type ProviderId,
   type ProviderModel,
   type ProviderUsage,
 } from "../lib/byok";
@@ -16,6 +17,283 @@ import { Icon } from "./icon";
 import { Skeleton } from "./motion-system";
 
 const root = "/api/me/provider-configurations";
+
+function previewProvider(draft: ConfigurationDraft, apiKey: string, configurationId?: string | null) {
+  return api<{ models: ProviderModel[]; connection: Connection }>(`${root}/preview`, {
+    method: "POST",
+    body: JSON.stringify({
+      ...draft,
+      name: draft.name || "Unsaved configuration",
+      model: draft.model || "unselected",
+      temperature: null,
+      ...(apiKey ? { api_key: apiKey } : {}),
+      ...(configurationId ? { configuration_id: configurationId } : {}),
+    }),
+  });
+}
+
+export function ModelPicker({
+  workspaceId,
+  selection,
+  onChanged,
+  onSaved,
+}: {
+  workspaceId: string;
+  selection: AISelection;
+  onChanged: () => Promise<void>;
+  onSaved: () => void;
+}) {
+  const [catalog, setCatalog] = useState<ProviderCatalog | null>(null);
+  const [editing, setEditing] = useState(selection.active?.id);
+  const [providerId, setProviderId] = useState<ProviderId | "">(selection.active?.provider ?? "");
+  const [draft, setDraft] = useState(() => configurationDraft(selection.active ?? undefined));
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [models, setModels] = useState<ProviderModel[]>([]);
+  const [pending, setPending] = useState("");
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const provider = catalog?.providers.find((item) => item.id === providerId);
+  const stored = catalog?.configurations.find((item) => item.id === editing);
+  const matched = stored && (providerId !== "compatible" || stored.base_url === draft.base_url.trim())
+    ? stored
+    : undefined;
+  const model = models.find((item) => item.id === draft.model);
+  const needsPaidConsent = provider?.remote && model?.cost_status !== "free";
+  const hasKey = !!apiKey || !!matched?.credential_configured;
+
+  useEffect(() => {
+    let active = true;
+    api<ProviderCatalog>(root).then(
+      (value) => { if (active) setCatalog(value); },
+      (cause: Error) => { if (active) setError(cause.message); },
+    );
+    return () => { active = false; };
+  }, [attempt]);
+
+  function change<K extends keyof ConfigurationDraft>(field: K, value: ConfigurationDraft[K]) {
+    setDraft((previous) => ({ ...previous, [field]: value }));
+  }
+
+  function resetTest() {
+    setModels([]);
+    setError("");
+    setStatus("");
+  }
+
+  async function check() {
+    if (!provider) return;
+    resetTest();
+    setPending("test");
+    try {
+      const result = await previewProvider(draft, apiKey, matched?.id);
+      if (result.connection.status !== "connected") throw new Error(result.connection.message);
+      setModels(result.models);
+      if (!result.models.some((item) => item.id === draft.model)) change("model", "");
+      setStatus(result.models.length
+        ? `Connection verified. ${result.models.length} models available.`
+        : "Connection verified. This provider returned no available models.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Connection test failed.");
+    } finally {
+      setPending("");
+    }
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!provider || !model || pending) return;
+    setPending("save");
+    setError("");
+    try {
+      await api(`/api/workspaces/${workspaceId}/ai-selection/configuration`, {
+        method: "PUT",
+        body: JSON.stringify({
+          ...draft,
+          name: matched?.name ?? provider.name,
+          allow_workspace_cloud: provider.remote && draft.remote_consent,
+          ...(apiKey ? { api_key: apiKey } : {}),
+          ...(matched ? { configuration_id: matched.id } : {}),
+        }),
+      });
+      setApiKey("");
+      setShowKey(false);
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save the model.");
+    } finally {
+      setPending("");
+    }
+  }
+
+  async function removeKey(config: AIConfiguration) {
+    setPending("remove");
+    resetTest();
+    try {
+      await api(`${root}/${config.id}/credential`, { method: "DELETE" });
+      setCatalog((previous) => previous && ({
+        ...previous,
+        configurations: previous.configurations.map((item) =>
+          item.id === config.id ? { ...item, credential_configured: false } : item,
+        ),
+      }));
+      setApiKey("");
+      setShowKey(false);
+      setStatus("Saved API key removed.");
+      await onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove the saved key.");
+    } finally {
+      setPending("");
+    }
+  }
+
+  if (!catalog)
+    return error ? (
+      <section className="settings-card">
+        <p role="alert">{error}</p>
+        <button className="button secondary" onClick={() => { setError(""); setAttempt((value) => value + 1); }}>
+          Retry providers
+        </button>
+      </section>
+    ) : <Skeleton label="Loading providers" />;
+
+  return (
+    <form className="settings-card model-picker" onSubmit={save}>
+      <fieldset disabled={!!pending}>
+        <label>
+          Provider
+          <select value={providerId} onChange={(event) => {
+            const id = event.target.value as ProviderId | "";
+            const saved = catalog.configurations.findLast((item) => item.provider === id);
+            setProviderId(id);
+            setEditing(saved?.id);
+            setDraft({ ...configurationDraft(saved), ...(id ? { provider: id } : {}) });
+            setApiKey("");
+            setShowKey(false);
+            resetTest();
+          }}>
+            <option value="">Choose a provider</option>
+            {catalog.providers.map((item) => (
+              <option value={item.id} key={item.id}>{item.name}</option>
+            ))}
+          </select>
+        </label>
+        {provider?.remote && (
+          <>
+            <label htmlFor="model-api-key">
+              API key
+              <input
+                id="model-api-key"
+                type={showKey ? "text" : "password"}
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={4096}
+                value={apiKey}
+                placeholder={matched?.credential_configured ? "Saved key in use" : "Enter your API key"}
+                onChange={(event) => { setApiKey(event.target.value); resetTest(); }}
+              />
+            </label>
+            <div className="model-picker-actions">
+              <button className="button secondary" type="button" aria-pressed={showKey} onClick={() => setShowKey(!showKey)}>
+                {showKey ? "Hide key" : "Show key"}
+              </button>
+              {matched?.credential_configured && (
+                <button className="button secondary" type="button" onClick={() => void removeKey(matched)}>
+                  Remove saved key
+                </button>
+              )}
+            </div>
+            {matched?.credential_configured && <p className="field-help">Enter a new key to replace the saved one.</p>}
+            {!catalog.credential_storage.enabled && <p className="field-help">{catalog.credential_storage.message}</p>}
+          </>
+        )}
+        {providerId === "compatible" && (
+          <label>
+            Approved HTTPS endpoint
+            <input type="url" value={draft.base_url} maxLength={500} onChange={(event) => {
+              setDraft((previous) => ({
+                ...previous,
+                base_url: event.target.value,
+                remote_consent: false,
+                allow_paid: false,
+              }));
+              setApiKey("");
+              resetTest();
+            }} />
+          </label>
+        )}
+        <button className="button secondary" type="button" onClick={() => void check()}
+          disabled={!provider || (provider.remote && !hasKey) || (providerId === "compatible" && !draft.base_url.trim())}>
+          {pending === "test" ? "Testing connection…" : "Test connection and load models"}
+        </button>
+        <label>
+          Model
+          <select value={draft.model} disabled={!models.length} onChange={(event) => {
+            change("model", event.target.value);
+            change("temperature", null);
+            if (event.target.value !== stored?.model) change("allow_paid", false);
+          }}>
+            <option value="">Choose a model</option>
+            {!models.length && draft.model && <option value={draft.model}>{draft.model}</option>}
+            {models.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name === item.id ? item.id : `${item.name} · ${item.id}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        {provider?.remote && (
+          <label className="check-label">
+            <input type="checkbox" checked={draft.remote_consent} onChange={(event) => change("remote_consent", event.target.checked)} />
+            I allow {provider.name} to receive questions, conversation context, and relevant document excerpts from this workspace.
+          </label>
+        )}
+        {needsPaidConsent && model && (
+          <label className="check-label">
+            <input type="checkbox" checked={draft.allow_paid} onChange={(event) => change("allow_paid", event.target.checked)} />
+            I agree to the provider’s billing terms for this model. My provider account may be charged.
+          </label>
+        )}
+        {provider && (
+          <details className="byok-advanced">
+            <summary>Advanced settings</summary>
+            <div className="settings-field-grid">
+              <label>
+                Maximum output tokens
+                <input type="number" min={64} max={32768} required value={draft.max_output_tokens}
+                  onChange={(event) => change("max_output_tokens", Number(event.target.value))} />
+              </label>
+              <label>
+                Request timeout (seconds)
+                <input type="number" min={1} max={120} required value={draft.timeout_seconds}
+                  onChange={(event) => change("timeout_seconds", Number(event.target.value))} />
+              </label>
+              <label>
+                Daily request limit
+                <input type="number" min={0} max={10000} required value={draft.max_calls_per_day}
+                  onChange={(event) => change("max_calls_per_day", Number(event.target.value))} />
+              </label>
+              <label className="check-label">
+                <input type="checkbox" checked={draft.streaming} onChange={(event) => change("streaming", event.target.checked)} />
+                Stream responses
+              </label>
+            </div>
+          </details>
+        )}
+        {error && <p className="document-error" role="alert">{error}</p>}
+        {status && <p className="byok-notice" role="status">{status}</p>}
+        <button className="button primary" type="submit" disabled={!model ||
+          (provider?.remote && (!hasKey || !catalog.credential_storage.enabled || !draft.remote_consent)) ||
+          (needsPaidConsent && !draft.allow_paid)}>
+          {pending === "save" ? "Saving…" : "Save and use model"}
+        </button>
+      </fieldset>
+    </form>
+  );
+}
+
 export function ByokControls({
   workspaceId,
   selection,
@@ -144,20 +422,7 @@ export function ByokControls({
         await onChanged();
         return;
       }
-      const result = await api<{
-        models: ProviderModel[];
-        connection: Connection;
-      }>(`${root}/preview`, {
-        method: "POST",
-        body: JSON.stringify({
-          ...draft,
-          name: draft.name || "Unsaved configuration",
-          model: draft.model || "unselected",
-          temperature: null,
-          ...(apiKey ? { api_key: apiKey } : {}),
-          ...(editing ? { configuration_id: editing } : {}),
-        }),
-      });
+      const result = await previewProvider(draft, apiKey, editing);
       setConnection(result.connection);
       setModels(result.models);
     } catch (error) {
