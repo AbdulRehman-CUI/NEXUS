@@ -13,31 +13,34 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from test_byok import KEY, MASTER, ROOT, mock_http, payload
 
-from nexus.auth import GUEST_COOKIE, add_user
+from nexus.auth import GUEST_COOKIE, add_user, token_hash
 from nexus.config import Settings
 from nexus.database import GuestSession, ProviderConfiguration, Workspace
 from nexus.main import create_app
 
 ORIGIN = "https://testserver"
 REPLACEMENT = "replacement-test-key-12345"
+SETUP_TOKEN = "test-only-setup-token-" + "s" * 32
 
 
-@pytest.fixture(params=["sqlite", "postgresql"])
+@pytest.fixture(params=["sqlite", "postgresql", "hosted"])
 def guest_apps(request, tmp_path):
     database_url = ""
     engine = None
     schema = "nexus_guest_test_" + secrets.token_hex(8)
-    if request.param == "postgresql":
-        url = os.environ.get("NEXUS_TEST_POSTGRES_URL")
+    hosted = request.param == "hosted"
+    if request.param != "sqlite":
+        variable = "NEXUS_TEST_DATABASE_URL" if hosted else "NEXUS_TEST_POSTGRES_URL"
+        url = os.environ.get(variable)
         if not url:
-            pytest.skip("Set NEXUS_TEST_POSTGRES_URL to a disposable PostgreSQL database.")
+            pytest.skip(f"Set {variable} to a disposable PostgreSQL database.")
         url = make_url(url).set(drivername="postgresql+psycopg")
         engine = create_engine(url, hide_parameters=True)
-        with engine.begin() as connection:
-            connection.execute(text(f"CREATE SCHEMA {schema}"))
-        database_url = url.update_query_dict({"options": f"-csearch_path={schema}"}).render_as_string(
-            hide_password=False
-        )
+        if not hosted:
+            with engine.begin() as connection:
+                connection.execute(text(f"CREATE SCHEMA {schema}"))
+            url = url.update_query_dict({"options": f"-csearch_path={schema}"})
+        database_url = url.render_as_string(hide_password=False)
     try:
         with ExitStack() as stack:
             apps = []
@@ -47,9 +50,12 @@ def guest_apps(request, tmp_path):
                     profile="server",
                     data_dir=tmp_path / str(index),
                     database_url=database_url,
+                    database_schema=schema,
+                    hosted=hosted,
                     cors_origins=[ORIGIN],
                     guest_access=True,
                     guest_session_secret="test-only-guest-secret-" + "s" * 32,
+                    setup_token_hash=token_hash(SETUP_TOKEN),
                     byok_master_key=MASTER,
                     embedding_provider="hash",
                     worker_enabled=index == 0,
@@ -63,7 +69,7 @@ def guest_apps(request, tmp_path):
     finally:
         if engine:
             with engine.begin() as connection:
-                connection.execute(text(f"DROP SCHEMA {schema} CASCADE"))
+                connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
             engine.dispose()
 
 
@@ -134,6 +140,13 @@ def test_guest_model_activation_and_private_workspaces(guest_apps, monkeypatch):
     one, two = workspace(first), workspace(second)
     assert one != two
     assert first.get("/health").json() == {"status": "ok"}
+    assert (
+        first.post(
+            "/api/auth/setup",
+            json={"username": "guest-admin", "password": "Guest attempt 123", "token": SETUP_TOKEN},
+        ).status_code
+        == 403
+    )
     conversation = chat(first, one)
     send = f"/api/chats/{conversation}/messages?workspace_id={one}"
     request = {"content": "How does this work?"}

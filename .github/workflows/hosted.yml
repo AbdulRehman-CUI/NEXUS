@@ -1,0 +1,31 @@
+name: Hosted PostgreSQL checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: nexus_test
+          POSTGRES_PASSWORD: test_database_only
+          POSTGRES_DB: nexus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexus_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r deploy/api/requirements.txt pytest==9.2.0
+      - run: python deploy/api/build.py
+      - run: python -m pytest apps/api/tests/test_hosted.py apps/api/tests/test_guest.py -k "hosted or postgresql" -q
+        env:
+          NEXUS_TEST_DATABASE_URL: postgresql://nexus_test:test_database_only@localhost:5432/nexus_test
+          NEXUS_TEST_POSTGRES_URL: postgresql://nexus_test:test_database_only@localhost:5432/nexus_test

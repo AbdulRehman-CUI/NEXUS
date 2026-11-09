@@ -113,6 +113,43 @@ class LoginInput(BaseModel):
 router = APIRouter(prefix="/api/auth", tags=["Identity"])
 
 
+class SetupInput(LoginInput):
+    token: str = Field(min_length=32, max_length=128)
+    password: str = Field(min_length=12, max_length=256)
+
+
+@router.get("/setup")
+def setup_status(request: Request):
+    svc = request.app.state.service
+    with svc.sessions() as session:
+        return {
+            "available": not svc.settings.guest_access
+            and bool(svc.settings.setup_token_hash.get_secret_value())
+            and session.scalar(select(User.id).limit(1)) is None
+        }
+
+
+@router.post("/setup", status_code=201)
+def setup_owner(body: SetupInput, request: Request):
+    svc = request.app.state.service
+    expected = svc.settings.setup_token_hash.get_secret_value()
+    if (
+        svc.settings.profile != "server"
+        or svc.settings.guest_access
+        or not expected
+        or not hmac.compare_digest(token_hash(body.token), expected)
+    ):
+        raise HTTPException(403, "Invalid setup token.")
+    with svc.lock, svc.sessions.begin() as session:
+        if session.scalar(select(User.id).limit(1)) is not None:
+            raise HTTPException(409, "Setup is complete. Sign in with your existing account.")
+        try:
+            add_user(session, body.username.lower(), body.password, admin=True)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+    return {"created": True}
+
+
 @router.get("/me")
 def me(request: Request):
     service = request.app.state.service

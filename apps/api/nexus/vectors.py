@@ -3,12 +3,7 @@ import json
 from heapq import nsmallest
 from typing import Protocol
 
-import chromadb
 import numpy as np
-from chromadb.config import Settings as ChromaSettings
-from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
-from llama_index.core.vector_stores import FilterOperator, MetadataFilter, MetadataFilters, VectorStoreQuery
-from llama_index.vector_stores.chroma import ChromaVectorStore
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 
@@ -16,7 +11,12 @@ from .database import StoredVector
 
 
 def index_configuration(embedding, chunk_size, overlap):
-    return {"embedding": embedding, "chunk_size": chunk_size, "overlap": overlap, "parser": "normalized-v1"}
+    return {
+        "embedding": embedding,
+        "chunk_size": chunk_size,
+        "overlap": overlap,
+        "parser": "bounded-sentence-v2",
+    }
 
 
 def index_fingerprint(configuration):
@@ -42,6 +42,10 @@ class ChromaIndex:
         namespace=None,
         fingerprint=None,
     ):
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+        from llama_index.vector_stores.chroma import ChromaVectorStore
+
         self.dimension = dimension
         self.configuration = index_configuration(embedding_fingerprint, chunk_size, overlap)
         self.fingerprint = fingerprint or index_fingerprint(self.configuration)
@@ -70,6 +74,8 @@ class ChromaIndex:
         self.collection.delete(where={"$and": [{"workspace_id": workspace_id}, {"document_id": document_id}]})
 
     def upsert(self, chunks, embeddings):
+        from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
+
         if len(chunks) != len(embeddings) or any(len(vector) != self.dimension for vector in embeddings):
             raise ValueError("Vector dimension mismatch; rebuild with a compatible embedding configuration.")
         # Chroma's upsert makes interrupted/repeated jobs idempotent.
@@ -97,6 +103,13 @@ class ChromaIndex:
             )
 
     def search(self, workspace_id, vector, limit, document_ids=None):
+        from llama_index.core.vector_stores import (
+            FilterOperator,
+            MetadataFilter,
+            MetadataFilters,
+            VectorStoreQuery,
+        )
+
         if len(vector) != self.dimension:
             raise ValueError("Query embedding dimension does not match index dimension.")
         if document_ids == []:

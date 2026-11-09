@@ -19,6 +19,7 @@ from nexus.database import (
     Workspace,
     database,
 )
+from nexus.hosted import DatabaseLock, postgres_database
 from nexus.lease import DataLease
 from sqlalchemy import delete, select, text
 
@@ -38,17 +39,24 @@ def main():
     settings = Settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     database_url = settings.database_url.get_secret_value()
-    lease = nullcontext() if database_url else DataLease(settings.data_dir)
-    lease.__enter__()
-    engine, sessions = database(
-        settings.data_dir.resolve() / "nexus.sqlite3", database_url
-    )
-    config = Config(str(Path(__file__).resolve().parents[1] / "apps/api/alembic.ini"))
-    with engine.begin() as connection:
-        if database_url:
-            connection.execute(text("SELECT pg_advisory_xact_lock(834102, 1)"))
-        config.attributes["connection"] = connection
-        command.upgrade(config, "head")
+    if settings.hosted:
+        engine, sessions = postgres_database(settings)
+        lease = DatabaseLock(engine, settings.database_schema)
+        lease.__enter__()
+    else:
+        lease = nullcontext() if database_url else DataLease(settings.data_dir)
+        lease.__enter__()
+        engine, sessions = database(
+            settings.data_dir.resolve() / "nexus.sqlite3", database_url
+        )
+        config = Config(
+            str(Path(__file__).resolve().parents[1] / "apps/api/alembic.ini")
+        )
+        with engine.begin() as connection:
+            if database_url:
+                connection.execute(text("SELECT pg_advisory_xact_lock(834102, 1)"))
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
     with sessions.begin() as session:
         user = session.scalar(select(User).where(User.username == args.username))
         if args.disable or args.reset_password:
@@ -88,8 +96,8 @@ def main():
                 session.add(
                     Membership(workspace_id=workspace.id, user_id=user.id, role="owner")
                 )
-    engine.dispose()
     lease.__exit__()
+    engine.dispose()
     print("Account updated. Passwords and session tokens were not printed.")
 
 

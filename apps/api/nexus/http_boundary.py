@@ -73,7 +73,7 @@ def install_boundary(app, settings):
                 )
                 connection.execute("DELETE FROM request_events WHERE created_at < ?", (cutoff,))
                 connection.execute("DELETE FROM usage_events WHERE created_at < ?", (cutoff,))
-        except sqlite3.Error:
+        except Exception:
             logger.warning("request_metric_write_failed request_id=%s", request_id)
 
     @app.middleware("http")
@@ -101,15 +101,18 @@ def install_boundary(app, settings):
                 return await call_next(request)
             now = time.monotonic()
             login = request.url.path == "/api/auth/login"
+            private_setup = request.url.path == "/api/auth/setup" and not settings.guest_access
             bootstrap = request.url.path == "/api/auth/guest"
-            key = (peer, "identity" if login or bootstrap else "all")
+            key = (peer, "identity" if login or bootstrap or private_setup else "all")
             if len(buckets) > 5000:
                 buckets.clear()  # One process; reverse-proxy network limits remain necessary for server deployments.
             queue = buckets.setdefault(key, deque())
             while queue and queue[0] < now - 60:
                 queue.popleft()
             if len(queue) >= (
-                settings.login_limit_per_minute if login or bootstrap else settings.rate_limit_per_minute
+                settings.login_limit_per_minute
+                if login or bootstrap or private_setup
+                else settings.rate_limit_per_minute
             ):
                 raise HTTPException(
                     429,
@@ -122,13 +125,17 @@ def install_boundary(app, settings):
                 user, cookie = await run_in_threadpool(
                     identify, request.cookies.get(COOKIE, ""), request.cookies.get(GUEST_COOKIE, "")
                 )
-                public = request.url.path in {"/health", "/api/auth/login", "/api/auth/guest"}
+                public = private_setup or request.url.path in {
+                    "/health",
+                    "/api/auth/login",
+                    "/api/auth/guest",
+                }
                 if user is None and not public:
                     raise HTTPException(
                         401,
                         "Workspace session required." if settings.guest_access else "Sign in to continue.",
                     )
-                if mutation and user and not (login or bootstrap):
+                if mutation and user and not (login or bootstrap or private_setup):
                     if not hmac.compare_digest(request.headers.get("x-csrf-token", ""), csrf_token(cookie)):
                         raise HTTPException(403, "CSRF token missing or invalid. Reload and retry.")
                 if (
@@ -170,6 +177,19 @@ def install_boundary(app, settings):
             except TimeoutError:
                 raise HTTPException(503, "Server is busy. Retry shortly.") from None
             try:
+                if (
+                    settings.hosted
+                    and user
+                    and request.method == "GET"
+                    and (
+                        "/documents" in request.url.path
+                        or "/jobs/" in request.url.path
+                        or "/index" in request.url.path
+                        or "/vaults" in request.url.path
+                    )
+                ):
+                    # Await one durable unit within this invocation; never depend on a daemon thread.
+                    await asyncio.to_thread(app.state.service.process_one)
                 response = await call_next(request)
             finally:
                 slots.release()

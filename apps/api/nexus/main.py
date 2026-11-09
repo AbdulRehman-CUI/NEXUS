@@ -21,7 +21,6 @@ from .database import Chat, Chunk, Citation, Document, IndexGeneration, Job, Not
 from .middleware import UploadLimitMiddleware
 from .providers import ProviderError
 from .service import Service, record
-from .storage import FileStorage
 
 
 class NameInput(BaseModel):
@@ -61,27 +60,35 @@ def create_app(settings: Settings | None = None):
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         database_url = settings.database_url.get_secret_value()
         with ExitStack() as cleanup:
-            if not database_url:
-                cleanup.enter_context(DataLease(settings.data_dir))
-            if (settings.data_dir / ".restoring").exists():
-                raise RuntimeError(
-                    "Incomplete restore directory. Restore a verified backup into a new directory."
-                )
-            safe_config = FileStorage(settings.data_dir)
-            saved = safe_config.path("provider.json")
-            if not database_url and saved.exists():
-                config = ProviderInput.model_validate_json(saved.read_text("utf-8"))
-                for key, value in config.model_dump().items():
-                    setattr(settings, key, value)
-            engine, sessions = database(settings.data_dir / "nexus.sqlite3", database_url)
+            if settings.hosted:
+                from .hosted import postgres_database
+
+                engine, sessions = postgres_database(settings)
+            else:
+                if not database_url:
+                    cleanup.enter_context(DataLease(settings.data_dir))
+                if (settings.data_dir / ".restoring").exists():
+                    raise RuntimeError(
+                        "Incomplete restore directory. Restore a verified backup into a new directory."
+                    )
+                engine, sessions = database(settings.data_dir / "nexus.sqlite3", database_url)
+                config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+                with engine.begin() as connection:
+                    if database_url:
+                        connection.execute(text("SELECT pg_advisory_xact_lock(834102, 1)"))
+                    config.attributes["connection"] = connection
+                    command.upgrade(config, "head")
             cleanup.callback(engine.dispose)
-            config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-            with engine.begin() as connection:
-                if database_url:
-                    connection.execute(text("SELECT pg_advisory_xact_lock(834102, 1)"))
-                config.attributes["connection"] = connection
-                command.upgrade(config, "head")
             service = Service(settings, sessions)
+            if settings.hosted or not database_url:
+                try:
+                    saved = service.config_files.read("provider.json")
+                except FileNotFoundError:
+                    pass
+                else:
+                    config = ProviderInput.model_validate_json(saved)
+                    for key, value in config.model_dump().items():
+                        setattr(settings, key, value)
             cleanup.callback(service.close)
             app.state.service = service
             app.state.engine = engine
@@ -118,7 +125,7 @@ def create_app(settings: Settings | None = None):
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
-        if request.url.path in {"/api/auth/guest", "/api/auth/login"}:
+        if request.url.path in {"/api/auth/guest", "/api/auth/login", "/api/auth/setup"}:
             return JSONResponse({"detail": "Invalid session request."}, status_code=422)
         if request.url.path.startswith("/api/me/provider-configurations") or request.url.path.endswith(
             "/ai-selection/configuration"
@@ -166,11 +173,14 @@ def create_app(settings: Settings | None = None):
             return {"status": "ok"}
         return {
             "status": "ok",
-            "sqlite": sql,
+            "database": "postgresql" if service.postgres else "sqlite",
+            "database_ready": sql,
+            "sqlite": sql and not service.postgres,
             "vectors": True,
             "indexed_chunks": count,
-            "files": bool(settings.database_url.get_secret_value()) or os.access(service.files.root, os.W_OK),
-            "worker": bool(service.thread and service.thread.is_alive()),
+            "files": service.postgres or os.access(service.files.root, os.W_OK),
+            "worker": settings.hosted or bool(service.thread and service.thread.is_alive()),
+            "processing_mode": "request" if settings.hosted else "background",
             "embedding_provider": settings.embedding_provider,
             "embedding_loaded": loaded,
         }
@@ -456,10 +466,10 @@ def create_app(settings: Settings | None = None):
 
     @app.patch("/api/settings/public")
     def update_settings(body: ProviderInput):
-        if settings.database_url.get_secret_value():
-            raise HTTPException(409, "Configure hosted server defaults through environment variables.")
+        if svc().postgres and not settings.hosted:
+            raise HTTPException(409, "Configure server defaults through environment variables.")
         with svc().lock:
-            FileStorage(settings.data_dir).write("provider.json", body.model_dump_json().encode())
+            svc().config_files.write("provider.json", body.model_dump_json().encode())
             for key, value in body.model_dump().items():
                 setattr(settings, key, value)
         return public_settings()

@@ -151,7 +151,12 @@ def visible_document_condition():
 class RetrievalPipeline:
     def __init__(self, service):
         self.service = service
-        self.lexical = PostgresLexicalIndex() if service.postgres else SQLiteLexicalIndex()
+        if service.settings.hosted:
+            from .hosted import PostgresLexicalIndex as HostedLexicalIndex
+
+            self.lexical = HostedLexicalIndex()
+        else:
+            self.lexical = PostgresLexicalIndex() if service.postgres else SQLiteLexicalIndex()
         self.rerankers = {}
 
     def profile(self, session, workspace_id):

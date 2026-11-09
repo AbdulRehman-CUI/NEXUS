@@ -2,14 +2,14 @@
 
 ## Vercel and Neon guest access
 
-Enable `NEXUS_GUEST_ACCESS=true` on the **FastAPI deployment** and keep `NEXUS_PROFILE=server`. Set these API environment variables in each deployment environment that offers guest access.
+Enable `NEXUS_GUEST_ACCESS=true` on the **FastAPI service**. The repository's Vercel Services deployment uses `NEXUS_HOSTED=true` and Neon pgvector. See the [Vercel runbook](VERCEL.md) for the hosted schema, request-driven ingestion, and preview isolation.
 
 | Variable | Value |
 | --- | --- |
 | `NEXUS_GUEST_ACCESS` | `true` |
 | `NEXUS_PROFILE` | `server` |
 | `NEXUS_SECURE_COOKIES` | `true` |
-| `NEXUS_DATABASE_URL` | The existing Neon PostgreSQL connection URL with TLS, for example `?sslmode=require`. |
+| `DATABASE_URL` or `NEXUS_DATABASE_URL` | The existing Neon PostgreSQL connection URL with TLS, for example `?sslmode=require`. |
 | `NEXUS_GUEST_SESSION_SECRET` | An independent secret generated with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Use the same value across API instances. |
 | `NEXUS_BYOK_MASTER_KEY` | The existing base64-encoded AES master key. Keep the same value across instances and releases to preserve access to encrypted credentials. |
 | `NEXUS_ALLOWED_HOSTS` | JSON array of exact API hostnames the proxy sends in `Host`. |
@@ -19,11 +19,11 @@ Enable `NEXUS_GUEST_ACCESS=true` on the **FastAPI deployment** and keep `NEXUS_P
 
 Serve the API under the frontend origin so the browser can send its host-only, Strict cookie with app requests. With separate frontend and API projects, set `NEXT_PUBLIC_API_URL=/` and `NEXUS_API_ORIGIN=https://<your-api-host>` on the **Next.js project**, then rebuild. The rewrite forwards `/api/*` to the FastAPI deployment. If your deployment already routes `/api/*` on the frontend origin, set just `NEXT_PUBLIC_API_URL=/`. Keep the API routes uncached and configure trusted proxy forwarding so FastAPI sees HTTPS. [Vercel external rewrites](https://vercel.com/docs/routing/rewrites)
 
-Startup applies additive migration `0006` to the configured database. API instances serialize migration with a PostgreSQL transaction lock. Use a database role that can apply the migration, and a separate Neon branch for preview/test environments. Keep the current database connection and BYOK master when upgrading an existing hosted deployment. Local SQLite/Chroma data remains in its local store. Moving it to PostgreSQL requires a separate data migration.
+Vercel startup adds the guest-session table in hosted schema version `2`. Standalone API deployments apply Alembic migration `0006`. Use a database role that can apply the migration, and a separate Neon branch for preview/test environments. Keep the current database connection, schema, and BYOK master when upgrading an existing hosted deployment. Local SQLite/Chroma data remains in its local store. Moving it to PostgreSQL requires a separate data migration.
 
 A missing or expired browser cookie opens a new, empty guest workspace. Refreshes keep the same workspace until the fixed expiry. Expiry revokes access to the old workspace and its credentials. Expired rows, encrypted keys, and documents are retained. First-visit coordination across browser tabs uses Web Locks. Existing account sessions and private memberships continue to work through the authenticated API. Guest sessions have one workspace and cannot manage memberships or use server-wide generation credentials. Guest Ollama is disabled because a hosted API has no access to the visitor’s loopback interface.
 
-PostgreSQL stores original files and vectors as well as the workspace records. Vector and keyword retrieval scan the authorized workspace’s data. Budget for database storage and configure perimeter rate limits for public traffic. If FastAPI runs only as short-lived functions, run a persistent ingestion worker with the same database and embedding settings so queued documents and vaults are indexed reliably. Set `NEXUS_WORKER_ENABLED=false` on those functions and run `python -m uvicorn nexus.main:app` from `apps/api` with `NEXUS_WORKER_ENABLED=true` in the persistent process. Existing PostgreSQL backup tooling should include the new tables. A Vercel environment variable change takes effect on the next deployment. [Vercel environment variables](https://vercel.com/docs/environment-variables/managing-environment-variables)
+PostgreSQL stores original files and vectors as well as the workspace records. Vector and keyword retrieval scope results to the authorized workspace. The Vercel service processes queued work while clients poll. Standalone PostgreSQL deployments can run the existing persistent ingestion worker with `NEXUS_WORKER_ENABLED=true`. Existing PostgreSQL backup tooling should include the new tables. A Vercel environment variable change takes effect on the next deployment. [Vercel environment variables](https://vercel.com/docs/environment-variables/managing-environment-variables)
 
 ### Guest verification
 

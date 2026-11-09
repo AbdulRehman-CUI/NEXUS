@@ -55,6 +55,14 @@ class Service:
         )
         # ponytail: serialize local storage operations; use document leases for multi-process deployment.
         self.lock = threading.RLock()
+        self.config_files = FileStorage(settings.data_dir)
+        if settings.hosted:
+            from .hosted import DatabaseLock, PostgresFiles
+
+            engine = sessions.kw["bind"]
+            self.lock = DatabaseLock(engine, settings.database_schema)
+            self.files = PostgresFiles(settings.data_dir / "originals", engine, "originals/")
+            self.config_files = PostgresFiles(settings.data_dir / "config", engine, "config/")
         self.stop_event = threading.Event()
         self.wake = threading.Event()
         self.thread = None
@@ -70,6 +78,10 @@ class Service:
         self.stream_slots = threading.BoundedSemaphore(4)
 
     def vector_index(self, *args):
+        if self.settings.hosted:
+            from .hosted import PostgresIndex as HostedIndex
+
+            return HostedIndex(self.sessions.kw["bind"], *args)
         if self.postgres:
             return PostgresIndex(self.sessions, *args)
         return ChromaIndex(self.settings.data_dir / "chroma", *args)
@@ -86,6 +98,10 @@ class Service:
         )
 
     def start(self):
+        with self.lock:
+            self._start()
+
+    def _start(self):
         with self.sessions.begin() as session:
             if not self.postgres:
                 self.reset_interrupted_jobs(session)
@@ -94,7 +110,7 @@ class Service:
         from .auth import system_scope
 
         with system_scope():
-            if not self.postgres:
+            if not self.postgres or self.settings.hosted:
                 self.indexes.startup()
             self.gateway.seed_registry()
         if self.settings.worker_enabled:
@@ -215,6 +231,11 @@ class Service:
 
         # Only already-admitted persisted jobs may execute without an HTTP principal.
         with system_scope():
+            if self.settings.hosted:
+                with self.lock:
+                    with self.sessions.begin() as session:
+                        self.reset_interrupted_jobs(session)
+                    return self._process_one()
             if self.postgres:
                 # Transaction-scoped across instances and safe with transaction poolers.
                 with self.sessions.begin() as coordinator:
