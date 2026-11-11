@@ -10,6 +10,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
@@ -183,7 +184,10 @@ def guest_session(body: GuestInput, request: Request, response: Response):
     svc = request.app.state.service
     settings = svc.settings
     if not settings.guest_access:
-        raise HTTPException(404, "Guest access is unavailable on this server.")
+        return JSONResponse(
+            {"code": "guest_access_disabled", "detail": "Guest access is unavailable on this server."},
+            status_code=404,
+        )
     if request.url.scheme != "https" or request.headers.get("origin") not in settings.cors_origins:
         raise HTTPException(403, "Guest initialization requires HTTPS and an allowed application origin.")
     if principal.get():

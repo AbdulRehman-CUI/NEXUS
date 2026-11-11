@@ -4,6 +4,71 @@ const baseURL = process.env.NEXUS_GUEST_BROWSER_URL;
 test.use({ baseURL, ignoreHTTPSErrors: true });
 test.skip(!baseURL, "Requires the isolated guest browser fixture.");
 
+test("disabled guest access is distinct from a connection failure", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({ status: 401 }));
+  await page.route("**/api/auth/guest", (route) =>
+    route.fulfill({
+      status: 404,
+      json: { code: "guest_access_disabled", detail: "Guest access is unavailable on this server." },
+    }),
+  );
+  await page.goto("/");
+  const alert = page.getByRole("main").getByRole("alert");
+  const retry = page.getByRole("button", { name: "Retry connection" });
+  await expect(alert).toContainText("Guest access is disabled on this deployment.");
+  await expect(retry).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Select LLM", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send question" })).toBeDisabled();
+
+  await page.unroute("**/api/auth/me");
+  await page.route("**/api/auth/me", (route) => route.abort("connectionfailed"));
+  await page.reload();
+  await expect(alert).toContainText("Could not reach the NEXUS server.");
+  await expect(retry).toBeVisible();
+});
+
+test("a fresh guest session persists across the application views", async ({ page }) => {
+  const initialized = page.waitForResponse((response) =>
+    response.url().endsWith("/api/auth/guest") && response.request().method() === "POST",
+  );
+  await page.goto("/");
+  const response = await initialized;
+  expect(response.status()).toBe(200);
+  expect(await response.request().headerValue("origin")).toBe(new URL(page.url()).origin);
+  const cookie = (await page.context().cookies()).find((item) => item.name === "__Host-nexus_guest");
+  expect(cookie).toMatchObject({ httpOnly: true, secure: true, sameSite: "Strict", path: "/" });
+  await expect(page.locator(".context-workspace")).toHaveText("Personal workspace");
+  const identity = await page.request.get("/api/auth/me");
+  expect(identity.ok()).toBe(true);
+  expect(await identity.json()).toMatchObject({ guest: true, user: null });
+
+  async function workspaces() {
+    const result = await page.request.get("/api/workspaces");
+    expect(result.ok()).toBe(true);
+    return result.json();
+  }
+  const original = await workspaces();
+  expect(original).toHaveLength(1);
+  for (const [path, heading] of [
+    ["/", /Your knowledge/],
+    ["/library", "A home for your sources."],
+    ["/vaults", "Your notes belong together."],
+    ["/graph", "A map of your thinking."],
+    ["/diagnostics", "Understand your workspace."],
+    ["/settings", "Your models. Your choice."],
+    ["/models", "Select an LLM"],
+  ] as const) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
+    await expect(page.getByLabel("Username")).toHaveCount(0);
+    await expect(page.getByLabel("Setup token")).toHaveCount(0);
+  }
+  await expect(page.getByRole("combobox", { name: "Provider", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Provider", exact: true })).toBeVisible();
+  expect(await workspaces()).toEqual(original);
+});
+
 test("homepage renders immediately and the mobile model picker opens", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   let unblock!: () => void;

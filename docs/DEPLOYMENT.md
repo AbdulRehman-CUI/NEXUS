@@ -6,16 +6,19 @@ Enable `NEXUS_GUEST_ACCESS=true` on the **FastAPI service**. The repository's Ve
 
 | Variable | Value |
 | --- | --- |
+| `NEXUS_HOSTED` | `true` |
 | `NEXUS_GUEST_ACCESS` | `true` |
 | `NEXUS_PROFILE` | `server` |
 | `NEXUS_SECURE_COOKIES` | `true` |
 | `DATABASE_URL` or `NEXUS_DATABASE_URL` | The existing Neon PostgreSQL connection URL with TLS, for example `?sslmode=require`. |
-| `NEXUS_GUEST_SESSION_SECRET` | An independent secret generated with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Use the same value across API instances. |
+| `NEXUS_GUEST_SESSION_SECRET` | A stable Secret generated from at least 32 random bytes. Use separate values for Production and Preview, and preserve any valid existing value. |
 | `NEXUS_BYOK_MASTER_KEY` | The existing base64-encoded AES master key. Keep the same value across instances and releases to preserve access to encrypted credentials. |
 | `NEXUS_ALLOWED_HOSTS` | JSON array of exact API hostnames the proxy sends in `Host`. |
 | `NEXUS_CORS_ORIGINS` | JSON array of exact HTTPS frontend origins, for example `["https://nexus.example.com"]`. |
 | `NEXUS_DATA_DIR` | A writable runtime directory, such as `/tmp/nexus` for a function. |
 | `NEXUS_GUEST_SESSION_HOURS` | Optional fixed lifetime in hours. Defaults to `168` (7 days), with an allowed range of 1–720. |
+
+Add the guest flag and secret under **Settings → Environment Variables**. Save a Secret for Production and a separately generated Secret for Preview. Keep both values out of source control, logs, and `NEXT_PUBLIC_*` variables. The [Vercel runbook](VERCEL.md#enable-guest-access) includes a Windows clipboard command and the production redeployment steps.
 
 Serve the API under the frontend origin so the browser can send its host-only, Strict cookie with app requests. With separate frontend and API projects, set `NEXT_PUBLIC_API_URL=/` and `NEXUS_API_ORIGIN=https://<your-api-host>` on the **Next.js project**, then rebuild. The rewrite forwards `/api/*` to the FastAPI deployment. If your deployment already routes `/api/*` on the frontend origin, set just `NEXT_PUBLIC_API_URL=/`. Keep the API routes uncached and configure trusted proxy forwarding so FastAPI sees HTTPS. [Vercel external rewrites](https://vercel.com/docs/routing/rewrites)
 

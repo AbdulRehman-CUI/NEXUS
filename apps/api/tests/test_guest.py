@@ -91,6 +91,24 @@ def workspace(client):
     return spaces[0]["id"]
 
 
+def test_disabled_guest_access_returns_configuration_error(tmp_path):
+    settings = Settings(
+        _env_file=None,
+        profile="server",
+        data_dir=tmp_path,
+        embedding_provider="hash",
+        worker_enabled=False,
+        cors_origins=[ORIGIN],
+    )
+    with TestClient(create_app(settings), base_url=ORIGIN, headers={"Origin": ORIGIN}) as client:
+        response = client.post("/api/auth/guest", json={"nonce": secrets.token_hex(32)})
+        assert response.status_code == 404
+        assert response.json()["code"] == "guest_access_disabled"
+        assert GUEST_COOKIE not in client.cookies
+        assert client.get("/api/auth/me").status_code == 401
+        assert client.get("/api/workspaces").status_code == 401
+
+
 def test_guest_bootstrap_concurrency_expiry_and_csrf(guest_apps):
     app, other_app = guest_apps
     first, second = browser(app), browser(other_app)
@@ -115,7 +133,9 @@ def test_guest_bootstrap_concurrency_expiry_and_csrf(guest_apps):
     with app.state.service.sessions.begin() as session:
         assert len(list(session.scalars(select(Workspace)))) == 1
         assert len(list(session.scalars(select(GuestSession)))) == 1
-    assert first.get("/api/auth/me").json()["csrf"] == first.headers["X-CSRF-Token"]
+    identity = first.get("/api/auth/me").json()
+    assert identity["guest"] is True
+    assert identity["csrf"] == first.headers["X-CSRF-Token"]
     assert first.post(f"/api/workspaces/{original}/chats", headers={"X-CSRF-Token": ""}).status_code == 403
     assert (
         first.post(

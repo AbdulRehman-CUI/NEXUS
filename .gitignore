@@ -18,7 +18,14 @@ artifacts/
 apps/web/test-results/
 apps/web/playwright-report/
 !tests/fixtures/
-
+BYOK_UI_BRANDING_REPORT.md
+NEXUS\FRONTEND_TRANSFORMATION_REPORT.md
+NEXUS_Three_Phase_Master_Reference.md
+PHASE_1_REPORT.md
+PHASE_2_REPORT.md
+PHASE_3_REPORT.md
+CHANGELOG.md
+docs
 
 # Package staged during the hosted API build.
 deploy/api/nexus/

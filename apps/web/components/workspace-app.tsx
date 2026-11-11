@@ -755,8 +755,10 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
           >
             {sessionError && (
               <div className="alert error" role="alert">
-                <span>{sessionError}</span>
-                <button className="button secondary" onClick={retry}>Retry connection</button>
+                <span>{sessionError.message}</span>
+                {sessionError.canRetry && (
+                  <button className="button secondary" onClick={retry}>Retry connection</button>
+                )}
               </div>
             )}
             {error && (

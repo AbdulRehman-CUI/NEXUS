@@ -13,8 +13,24 @@ let identity: Identity | null = null;
 let initializing: Promise<Identity> | null = null;
 let guestNonce: string | null = null;
 
+export class GuestAccessDisabledError extends Error {
+  constructor() {
+    super("Guest access is disabled on this deployment. Contact the site administrator.");
+  }
+}
+
+function sessionFetch(path: string, options?: RequestInit) {
+  return fetch(`${API}/api/auth/${path}`, {
+    ...options,
+    credentials: "include",
+    cache: "no-store",
+  }).catch(() => {
+    throw new Error("Could not reach the NEXUS server.");
+  });
+}
+
 async function openSession(): Promise<Identity> {
-  const current = await fetch(`${API}/api/auth/me`, { credentials: "include", cache: "no-store" });
+  const current = await sessionFetch("me");
   if (current.ok) {
     guestNonce = null;
     return current.json();
@@ -25,20 +41,23 @@ async function openSession(): Promise<Identity> {
     crypto.getRandomValues(new Uint8Array(32)),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
-  const result = await fetch(`${API}/api/auth/guest`, {
+  const result = await sessionFetch("guest", {
     method: "POST",
-    credentials: "include",
-    cache: "no-store",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ nonce: guestNonce }),
   });
   if (result.status === 409) guestNonce = null;
-  if (!result.ok)
-    throw new Error(result.status === 404
-      ? "Guest workspaces are unavailable on this server."
-      : "Could not open a guest workspace. Retry the connection.");
+  if (result.status === 404) {
+    const failure = await result.json().catch(() => null);
+    if (
+      failure?.code === "guest_access_disabled" ||
+      failure?.detail === "Guest access is unavailable on this server."
+    )
+      throw new GuestAccessDisabledError();
+  }
+  if (!result.ok) throw new Error("Could not open a guest workspace. Retry the connection.");
   // Confirm the browser accepted the HttpOnly cookie before enabling mutations.
-  const confirmed = await fetch(`${API}/api/auth/me`, { credentials: "include", cache: "no-store" });
+  const confirmed = await sessionFetch("me");
   if (!confirmed.ok)
     throw new Error("Allow cookies for NEXUS and retry opening your workspace.");
   guestNonce = null;

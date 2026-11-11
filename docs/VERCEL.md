@@ -18,7 +18,20 @@ ONNX embeddings run on CPU with the pinned MiniLM model. The first embedding req
 
 ## Guest access and AI providers
 
-Set `NEXUS_GUEST_ACCESS=true` and provide a stable, independently generated `NEXUS_GUEST_SESSION_SECRET` to the FastAPI service. Keep Secure cookies enabled. Each browser automatically opens a private workspace on first visit. The fixed lifetime defaults to seven days. See [deployment settings](DEPLOYMENT.md) for the exact values and origin configuration.
+### Enable guest access
+
+1. Open the **nexus** project in Vercel, then go to **Settings → Environment Variables**. Add `NEXUS_GUEST_ACCESS` with value `true` for **Production** and **Preview**.
+2. For each environment that lacks a valid `NEXUS_GUEST_SESSION_SECRET`, generate a new value from at least 32 random bytes and add it as type **Secret**. Use distinct values for Production and Preview. On Windows, run the following from PowerShell to copy a new value directly to the clipboard without printing it. Paste it into Vercel, save it, then run the command again for the other environment. Clear the clipboard after both saves.
+
+   ```powershell
+   python -c "import secrets, subprocess; subprocess.run(['clip.exe'], input=secrets.token_urlsafe(32), text=True, check=True)"
+   ```
+
+3. Retain `NEXUS_HOSTED=true`, `NEXUS_PROFILE=server`, `NEXUS_SECURE_COOKIES=true`, the existing `DATABASE_URL`, and the existing `NEXUS_BYOK_MASTER_KEY`. Keep exact values in `NEXUS_ALLOWED_HOSTS` and `NEXUS_CORS_ORIGINS`. Production uses `["nexus-livid-delta.vercel.app"]` and `["https://nexus-livid-delta.vercel.app"]`, respectively. The backend adds exact Vercel preview hostnames from exposed system variables. If a preview uses another hostname, add that host and its HTTPS origin to the Preview allowlists.
+4. In **Deployments**, open the menu for the intended **Production** deployment and choose **Redeploy**. Confirm the Production target and wait for **Ready**. Preview settings take effect on the next Preview deployment. [Vercel environment variables](https://vercel.com/docs/environment-variables/managing-environment-variables) · [Redeploy a deployment](https://vercel.com/docs/deployments/managing-deployments)
+5. Open the production URL in a fresh browser context. Check that `POST /api/auth/guest` returns 200, the browser stores the Secure, HttpOnly guest cookie, `GET /api/auth/me` reports `guest=true`, and the workspace loads. Refresh to confirm the workspace stays the same, then repeat in an independent context to check isolation. A successful guest initialization exercises the table added by hosted schema version 2.
+
+Each browser automatically opens a private workspace on first visit. The fixed lifetime defaults to seven days. See [deployment settings](DEPLOYMENT.md) for the complete configuration.
 
 Open **Select LLM** to add an API key, test a provider, and choose a model. Chat requires a selected model. Remote providers require consent before receiving questions or excerpts, and paid models or models with unknown pricing require billing consent. Keep the existing `NEXUS_BYOK_MASTER_KEY` stable to preserve stored credentials. The existing account API still supports private users. The one-time setup endpoint is available only when guest access is disabled and an operator has configured `NEXUS_SETUP_TOKEN_HASH`.
 
