@@ -49,7 +49,7 @@ jobs:
           npm run typecheck
           npm run lint
           npm run build
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
       - name: Browser fixtures (no keys, no model download)
         shell: bash
         run: |
