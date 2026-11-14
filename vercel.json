@@ -11,7 +11,8 @@
       "entrypoint": "main:app",
       "functions": {
         "main.py": {
-          "maxDuration": 300
+          "maxDuration": 300,
+          "includeFiles": "nexus/extract_worker.py"
         }
       }
     }
