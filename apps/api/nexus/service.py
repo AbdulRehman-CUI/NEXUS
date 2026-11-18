@@ -319,7 +319,7 @@ class Service:
                     ):
                         if note.content_hash == document.content_hash:
                             note.status = "failed"
-                logger.warning("job_failed id=%s kind=%s error_type=%s", job_id, kind, type(error).__name__)
+                logger.exception("job_failed id=%s kind=%s error_type=%s",job_id,kind,type(error).__name__,)
             return True
 
     def index_document(self, doc, index=None, embeddings=None, config=None):
