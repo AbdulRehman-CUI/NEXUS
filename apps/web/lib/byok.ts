@@ -57,6 +57,7 @@ export type AIConfiguration = ConfigurationDraft & {
 };
 export type AISelection = {
   active: AIConfiguration | null;
+  chat_model?: string | null;
   unavailable: boolean;
   selection: string | null;
   workspace_cloud_allowed: boolean;

@@ -44,6 +44,47 @@ test.afterEach(() => {
   expect(errors).toEqual([]);
 });
 
+test("fresh local workspace sends a grounded question through the offline composer", async ({ page, request }) => {
+  const created = await request.post(`${api}/api/workspaces`, { data: { name: "Restricted route" } });
+  expect(created.ok()).toBe(true);
+  const restricted = (await created.json()).id;
+  expect((await request.put(`${api}/api/workspaces/${restricted}/route-policy`, {
+    data: { provider: "groq", model: "fixture" },
+  })).ok()).toBe(true);
+  await page.goto("/library");
+  await page.getByLabel("Upload documents", { exact: true }).setInputFiles({
+    name: "observatory.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("The observatory opens at sunrise each morning."),
+  });
+  await expect(page.locator(".document-status.ready")).toHaveCount(1, { timeout: 30000 });
+  await page.goto("/");
+  await page.getByLabel("Ask a question about your documents").fill("When does the observatory open?");
+  const send = page.getByRole("button", { name: "Send question", exact: true });
+  await expect(send).toBeEnabled();
+  const submitted = page.waitForResponse(response =>
+    response.request().method() === "POST" && /\/messages\?workspace_id=/.test(response.url()));
+  await send.click();
+  const response = await submitted;
+  expect(response.ok()).toBe(true);
+  expect((await response.json()).provider).toBe("mock");
+  await expect(page.locator(".message.assistant")).toContainText("sunrise");
+  await page.locator(".inline-citation").first().click();
+  await expect(page.getByRole("dialog")).toContainText("observatory");
+  await page.keyboard.press("Escape");
+  const original = await page.evaluate(() => localStorage.getItem("nexus-workspace"));
+  expect(original).toBeTruthy();
+  const switcher = page.getByRole("button", { name: "Switch workspace", exact: true });
+  await switcher.click();
+  await page.getByRole("combobox", { name: "Workspace", exact: true }).selectOption(restricted);
+  await page.getByLabel("Ask a question about your documents").fill("Where is the observatory?");
+  await expect(page.locator(".composer-model")).toHaveText("Select an LLM to start chatting");
+  await expect(send).toBeDisabled();
+  await switcher.click();
+  await page.getByRole("combobox", { name: "Workspace", exact: true }).selectOption(original!);
+  await expect(send).toBeEnabled();
+});
+
 test("cloud key masking, discovery, private persistence, consent, defaults and key removal", async ({
   page,
   request,
@@ -191,6 +232,10 @@ test("cloud key masking, discovery, private persistence, consent, defaults and k
       exact: true,
     }),
   ).toHaveCount(0);
+  await page.goto("/");
+  await page.getByLabel("Ask a question about your documents").fill("Is this route available?");
+  await expect(page.getByRole("button", { name: "Send question" })).toBeDisabled();
+  await expect(page.locator(".composer-model")).toHaveAttribute("href", "/models");
 });
 
 test("real local-provider discovery, grounded streaming, source verification and usage", async ({

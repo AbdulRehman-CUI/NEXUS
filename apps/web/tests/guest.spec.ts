@@ -41,6 +41,9 @@ test("a fresh guest session persists across the application views", async ({ pag
   const identity = await page.request.get("/api/auth/me");
   expect(identity.ok()).toBe(true);
   expect(await identity.json()).toMatchObject({ guest: true, user: null });
+  await page.getByLabel("Ask a question about your documents").fill("Can I send this yet?");
+  await expect(page.getByRole("button", { name: "Send question" })).toBeDisabled();
+  await expect(page.locator(".composer-model")).toHaveText("Select an LLM to start chatting");
 
   async function workspaces() {
     const result = await page.request.get("/api/workspaces");
@@ -193,5 +196,6 @@ test("guest tests a key, selects and switches a model, chats, and removes the ke
   await expect(page.getByText("Saved API key removed.")).toBeVisible();
   await page.getByRole("banner").getByRole("link", { name: "NEXUS home" }).click();
   await expect(page.getByRole("link", { name: "Select an LLM to start chatting" })).toBeVisible();
+  await page.getByLabel("Ask a question about your documents").fill("Is the removed key still usable?");
   await expect(page.getByRole("button", { name: "Send question" })).toBeDisabled();
 });

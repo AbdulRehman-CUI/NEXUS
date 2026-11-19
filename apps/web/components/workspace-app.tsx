@@ -134,6 +134,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
   const selection = useRef(0);
   const activeWorkspace = workspaces.find((w) => w.id === workspaceId);
   const selectedModel = activeModel(aiSelection);
+  const chatModel = aiSelection?.chat_model === undefined ? selectedModel?.model : aiSelection.chat_model;
   const readyDocuments = documents.filter(
     (d) => d.status === "ready" && !d.needs_reindex,
   );
@@ -261,7 +262,9 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
 
   const reloadAI = useCallback(async () => {
     if (workspaceId) {
+      const sequence = selection.current;
       const next = await api<AISelection>(`/api/workspaces/${workspaceId}/ai-selection`);
+      if (sequence !== selection.current) return;
       setAiSelection(next);
       setConsent(next.workspace_cloud_allowed);
       setWorkspaces((spaces) =>
@@ -347,7 +350,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
 
   async function send(event: React.FormEvent) {
     event.preventDefault();
-    if (!question.trim() || busy || !workspaceId || !selectedModel) return;
+    if (!question.trim() || busy || !workspaceId || !chatModel) return;
     const content = question.trim();
     const controller = new AbortController();
     generationAbort.current = controller;
@@ -532,6 +535,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
         workspaces.map((w) => (w.id === workspace.id ? workspace : w)),
       );
       setNotice("Provider settings and workspace privacy choice saved.");
+      await reloadAI();
     } catch (cause) {
       fail(cause);
     } finally {
@@ -1122,7 +1126,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                       </Link>
                       <Link href="/models" className="composer-model">
                         <Icon name="spark" size={13} />
-                        {selectedModel?.model ?? "Select an LLM to start chatting"}
+                        {chatModel ?? "Select an LLM to start chatting"}
                         <Icon name="chevron" size={12} />
                       </Link>
                       {answering && (
@@ -1145,7 +1149,7 @@ function WorkspaceContent({ mode }: { mode: Mode }) {
                           busy ||
                           !question.trim() ||
                           !workspaceId ||
-                          !selectedModel
+                          !chatModel
                         }
                         aria-label="Send question"
                       >
