@@ -85,6 +85,55 @@ def evidence_chat(client, workspace):
     return chat(client, workspace)
 
 
+@pytest.mark.parametrize("streaming", [False, True])
+def test_sparse_question_options_preserve_evidence_budget(byok, monkeypatch, streaming):
+    config = save(byok, "ollama", streaming=streaming, context_budget_bytes=450)
+    workspace = enable(byok, config)
+    path = f"/api/workspaces/{workspace}"
+    short = "Budgetproof café."
+    medium = "Budgetproof " + "雪" * 125
+    large = "Budgetproof " + "星" * 180
+    for name, passage in [("short", short), ("medium", medium), ("large", large)]:
+        doc = upload(byok, workspace, name + ".txt", passage.encode(), "text/plain")
+        ready(byok, workspace, doc["document"]["id"])
+    assert byok.patch(path + "/retrieval-settings", json={"context_budget": 200}).is_success
+    captured = []
+
+    def provider(request):
+        body = json.loads(request.content)
+        sources = json.loads(body["messages"][-1]["content"])["evidence"]
+        captured.append([s["excerpt"] for s in sources])
+        reply = {"message": {"content": f"Verified [{sources[0]['citation_id']}]"}, "done": True}
+        assert body["stream"] is streaming
+        return httpx.Response(200, json=reply)
+
+    mock_http(monkeypatch, provider)
+    cases = [
+        ({}, [short]),
+        *[({"options": {"mode": mode}}, [short]) for mode in ("keyword", "semantic", "hybrid")],
+        ({"filters": {"types": [".txt"]}}, [short]),
+        ({"options": {"rewrite": False}}, [short]),
+        ({"options": {"mode": "keyword", "context_budget": 420}}, [short, medium]),
+        ({"options": {"mode": "keyword", "context_budget": 2000}}, [short, medium]),
+    ]
+    for fields, expected in cases:
+        identifier = chat(byok, workspace)
+        endpoint = f"/api/chats/{identifier}/messages" + ("/stream" if streaming else "")
+        captured.clear()
+        response = byok.post(endpoint, params={"workspace_id": workspace},
+                             json={"content": "Budgetproof", "diagnostics": True, **fields})
+        assert response.is_success, response.text
+        if streaming:
+            event = next(e for e in response.text.split("\n\n") if e.startswith("event: complete"))
+            answer = json.loads(event.split("data: ", 1)[1])
+        else:
+            answer = response.json()
+        assert len(captured) == 1
+        assert sorted(captured[0]) == sorted(expected), fields
+        assert answer["diagnostics"]["excerpt_bytes"] == sum(len(s.encode()) for s in captured[0])
+        assert answer["citations"]
+
+
 def test_encryption_replacement_validation_and_removal(byok, caplog):
     config = save(byok)
     svc = byok.app.state.service

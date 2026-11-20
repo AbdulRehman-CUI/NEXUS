@@ -143,7 +143,7 @@ def create_app(settings: Settings | None = None):
         return app.state.service
 
     @app.get("/health")
-    def health():
+    def health(response: Response):
         from .auth import principal
 
         actor = principal.get()
@@ -169,17 +169,22 @@ def create_app(settings: Settings | None = None):
                 getattr(embedding, "model", None) is not None
                 for embedding, _ in service.indexes.adapters.values()
             )
+        worker = bool(service.thread and service.thread.is_alive())
+        status = "ok"
+        if settings.worker_enabled and (not worker or service.queue_unavailable.is_set()):
+            status = "degraded"
+            response.status_code = 503
         if restricted_health:
-            return {"status": "ok"}
+            return {"status": status}
         return {
-            "status": "ok",
+            "status": status,
             "database": "postgresql" if service.postgres else "sqlite",
             "database_ready": sql,
             "sqlite": sql and not service.postgres,
             "vectors": True,
             "indexed_chunks": count,
             "files": service.postgres or os.access(service.files.root, os.W_OK),
-            "worker": settings.hosted or bool(service.thread and service.thread.is_alive()),
+            "worker": settings.hosted or worker,
             "processing_mode": "request" if settings.hosted else "background",
             "embedding_provider": settings.embedding_provider,
             "embedding_loaded": loaded,

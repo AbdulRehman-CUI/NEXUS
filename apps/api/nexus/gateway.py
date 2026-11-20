@@ -294,6 +294,29 @@ class ModelGateway:
             return WorkspaceGenerator(self, workspace_id, policy, legacy)
         return WorkspaceGenerator(self, workspace_id, policy)
 
+    def chat_model(self, session, workspace_id):
+        """Describe the authorized chat route without running inference or reserving usage."""
+        from .auth import authorize
+
+        try:
+            authorize(self.service.settings, session, workspace_id, "editor")
+            route = self.generator(session, workspace_id)
+            if not isinstance(route, WorkspaceGenerator):
+                return route.config["model"]
+            if route.name == "mock":
+                return "Offline extractive demo"
+            if route.legacy is None:
+                self.validate_permission(session, workspace_id, route.policy)
+            elif not route.policy.free_tier_confirmed:
+                return None
+            if is_remote(route.name):
+                key = getattr(self.service.settings, f"{route.name}_api_key")
+                if not key.get_secret_value():
+                    return None
+            return route.policy.model
+        except (HTTPException, ProviderError):
+            return None
+
     def validate_permission(self, session, workspace_id, policy):
         workspace = self.service.repo.workspace(session, workspace_id)
         if policy.provider == "mock":

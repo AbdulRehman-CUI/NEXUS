@@ -1,10 +1,14 @@
+import multiprocessing
+import os
+
+import pytest
 from conftest import chat, ready, upload
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from test_retrieval import search
 
 from nexus.config import Settings
-from nexus.database import IndexGeneration
+from nexus.database import Chunk, IndexGeneration
 from nexus.main import create_app
 from nexus.providers import HashEmbeddingProvider
 
@@ -14,6 +18,94 @@ def drain(client, count=30):
         if not client.app.state.service.process_one():
             return
     raise AssertionError("Worker did not drain")
+
+
+def interrupt_active_ingestion(settings, abrupt):
+    with TestClient(create_app(settings)) as client:
+        w = client.get("/api/workspaces").json()[0]["id"]
+        other = client.post("/api/workspaces", json={"name": "Other workspace"}).json()["id"]
+        healthy = upload(client, w)["document"]["id"]
+        upload(client, other)
+        drain(client)
+        body = " ".join(f"unpublished batch observation {n:03d}." for n in range(150)).encode()
+        upload(client, w, "large.txt", body, "text/plain")
+        service = client.app.state.service
+        embed = service.embeddings.embed
+        batches = []
+
+        def interrupt(texts):
+            batches.append(len(texts))
+            if len(batches) == 2:
+                assert batches == [32, 32]
+                if abrupt:
+                    os._exit(73)  # Leave both stores and the processing job exactly as a killed worker would.
+                raise RuntimeError("synthetic batch failure")
+            return embed(texts)
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(service.embeddings, "embed", interrupt)
+            assert service.process_one()
+        assert batches == [32, 32]
+        assert search(client, w, "Aurora")["results"][0]["document_id"] == healthy
+        assert not search(client, w, "unpublished", "keyword")["results"]
+
+
+@pytest.mark.parametrize("abrupt", [False, True], ids=["failed-job", "interrupted-process"])
+def test_interrupted_active_ingestion_recovers(tmp_path, abrupt):
+    settings = Settings(_env_file=None, data_dir=tmp_path, embedding_provider="hash",
+                        worker_enabled=False, chunk_size=100, chunk_overlap=0)
+    if abrupt:
+        process = multiprocessing.get_context("spawn").Process(target=interrupt_active_ingestion, args=(settings, True))
+        process.start()
+        process.join(60)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+        assert process.exitcode == 73
+    else:
+        interrupt_active_ingestion(settings, False)
+    with TestClient(create_app(settings)) as client:
+        spaces = {s["name"]: s["id"] for s in client.get("/api/workspaces").json()}
+        w, other = spaces["Personal workspace"], spaces["Other workspace"]
+        docs = {d["title"]: d["id"] for d in client.get(f"/api/workspaces/{w}/documents").json()}
+        healthy, doc = docs["aurora.md"], docs["large.txt"]
+        private = client.get(f"/api/workspaces/{other}/documents").json()[0]["id"]
+        interrupted = client.get(f"/api/documents/{doc}?workspace_id={w}").json()
+        assert interrupted["status"] == ("queued" if abrupt else "failed")
+        assert search(client, other, "Aurora")["results"][0]["document_id"] == private
+        assert search(client, w, "Aurora")["results"][0]["document_id"] == healthy
+        assert not search(client, w, "unpublished", "keyword")["results"]
+        service = client.app.state.service
+        previous = None
+        for attempt in range(3):
+            if attempt == 0 and not abrupt:
+                job_id = interrupted["jobs"][0]["id"]
+                assert client.post(f"/api/jobs/{job_id}/retry?workspace_id={w}").is_success
+            elif attempt > 0:
+                assert client.post(f"/api/documents/{doc}/reindex?workspace_id={w}").is_success
+            drain(client)
+            assert ready(client, w, doc)["chunk_count"] > 32
+            with service.sessions() as session:
+                ids = list(session.scalars(select(Chunk.id).where(Chunk.workspace_id == w)))
+            assert sorted(ids) == sorted(service.index.ids(w))
+            if previous is not None:
+                assert sorted(ids) == previous
+            previous = sorted(ids)
+        for mode in ("keyword", "semantic", "hybrid"):
+            assert search(client, w, "Aurora launch", mode)["results"][0]["document_id"] == healthy
+    with TestClient(create_app(settings)) as client:
+        assert search(client, w, "unpublished", "keyword")["results"][0]["document_id"] == doc
+        client.app.state.service.index.clear_document(w, healthy)
+    with TestClient(create_app(settings)) as client:
+        path = f"/api/workspaces/{w}/search"
+        assert client.post(path, json={"query": "Aurora"}).status_code == 503
+        assert client.post(f"/api/documents/{doc}/reindex?workspace_id={w}").is_success
+        drain(client)
+        assert client.post(path, json={"query": "Aurora"}).status_code == 503
+        assert search(client, other, "Aurora")["results"][0]["document_id"] == private
+        assert client.post(f"/api/documents/{healthy}/reindex?workspace_id={w}").is_success
+        drain(client)
+        assert search(client, w, "Aurora")["results"][0]["document_id"] == healthy
 
 
 def test_rollback_manifest_tracks_vault_revision_cleanup(tmp_path):

@@ -208,7 +208,9 @@ class RetrievalPipeline:
             query = query.where(exists(select(Note.id).where(*note_conditions)))
         return list(session.scalars(query)), note_conditions
 
-    def search(self, session, workspace_id, question, filters=None, options=None, chat_id=None):
+    def search(
+        self, session, workspace_id, question, filters=None, options=None, chat_id=None, *, prompt_budget=None
+    ):
         started = time.perf_counter()
         filters = filters or SearchFilters()
         profile = self.profile(session, workspace_id)
@@ -238,6 +240,9 @@ class RetrievalPipeline:
             else None
         )
         standalone = reformulate(question, previous, options.rewrite)
+        budget = options.context_budget
+        if prompt_budget is not None:
+            budget = min(budget, prompt_budget.excerpt_limit)
         variants = [standalone]
         if options.multi_query:
             variants += [question, " ".join(re.findall(r'"([^"\n]+)"', question))]
@@ -353,16 +358,25 @@ class RetrievalPipeline:
                 )
         else:
             candidates = NoReranker().rank(standalone, list(by_id.values()))
-        selected, fingerprints, per_document, remaining = [], [], Counter(), options.context_budget
+        selected, fingerprints, per_document, remaining = [], [], Counter(), budget
+        source_budget_skips = prompt_budget_skips = 0
         for key, score in candidates:
             item = by_id[key]
             tokens = set(re.findall(r"\w+", item["excerpt"].casefold()))
             if any(len(tokens & old) / max(1, len(tokens | old)) > 0.9 for old in fingerprints):
                 continue
             cost = len(item["excerpt"].encode("utf-8"))
-            if cost > remaining or per_document[item["document_id"]] >= options.max_per_document:
+            if per_document[item["document_id"]] >= options.max_per_document:
+                continue
+            if cost > remaining:
+                source_budget_skips += 1
                 continue
             item["score"] = score
+            if chat_id:
+                item = self.citation(item, len(selected))
+            if prompt_budget is not None and not prompt_budget.fits(standalone, [*selected, item]):
+                prompt_budget_skips += 1
+                continue
             selected.append(item)
             fingerprints.append(tokens)
             per_document[item["document_id"]] += 1
@@ -396,10 +410,16 @@ class RetrievalPipeline:
                 }
                 for item in selected
             ],
-            "excerpt_bytes": options.context_budget - remaining,
+            "excerpt_bytes": budget - remaining,
             "warnings": warnings,
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
         }
+        if prompt_budget is not None:
+            diagnostic["prompt_budget"] = {
+                "source_limit_bytes": budget,
+                "source_budget_skips": source_budget_skips,
+                "prompt_budget_skips": prompt_budget_skips,
+            }
         logger.info(
             "retrieval mode=%s candidates=%d selected=%d elapsed_ms=%s",
             options.mode,
@@ -409,10 +429,10 @@ class RetrievalPipeline:
         )
         return selected, diagnostic
 
+    def citation(self, item, order):
+        citation = {**item, "citation_id": f"C{uid().replace('-', '')[:12]}", "order": order}
+        citation["source_url"] += "&citation_id=" + citation["citation_id"]
+        return citation
+
     def evidence(self, results):
-        evidence = []
-        for item in results:
-            citation = {**item, "citation_id": f"C{uid().replace('-', '')[:12]}", "order": len(evidence)}
-            citation["source_url"] += "&citation_id=" + citation["citation_id"]
-            evidence.append(citation)
-        return evidence
+        return [self.citation(item, order) for order, item in enumerate(results)]

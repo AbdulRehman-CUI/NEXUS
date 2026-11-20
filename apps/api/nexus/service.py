@@ -1,11 +1,13 @@
 import hashlib
 import logging
 import re
+import sqlite3
 import threading
 
 from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy import text as sql_text
+from sqlalchemy.exc import OperationalError
 
 from .database import (
     Chat,
@@ -64,6 +66,7 @@ class Service:
             self.files = PostgresFiles(settings.data_dir / "originals", engine, "originals/")
             self.config_files = PostgresFiles(settings.data_dir / "config", engine, "config/")
         self.stop_event = threading.Event()
+        self.queue_unavailable = threading.Event()
         self.wake = threading.Event()
         self.thread = None
         self.indexes = IndexManager(self)
@@ -125,8 +128,34 @@ class Service:
             self.thread.join()
 
     def worker(self):
+        delay = 0.25
         while not self.stop_event.is_set():
-            if not self.process_one():
+            try:
+                if self.queue_unavailable.is_set() and not self.postgres:
+                    # An outage can also interrupt recording a job's terminal state.
+                    with self.lock, self.sessions.begin() as session:
+                        self.reset_interrupted_jobs(session)
+                processed = self.process_one()
+            except OperationalError as error:
+                code = getattr(error.orig, "sqlite_errorcode", None)
+                state = getattr(error.orig, "sqlstate", None)
+                if code is not None and (code & 255) not in {
+                    sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED, sqlite3.SQLITE_IOERR, sqlite3.SQLITE_CANTOPEN,
+                }:
+                    raise
+                if state and not (
+                    state.startswith(("08", "40", "53")) or state in {"55P03", "57P01", "57P02", "57P03"}
+                ):
+                    raise
+                if not self.queue_unavailable.is_set():
+                    self.log_failure("queue_read", "worker", error)
+                self.queue_unavailable.set()
+                self.stop_event.wait(delay)
+                delay = min(5.0, delay * 2)
+                continue
+            delay = 0.25
+            self.queue_unavailable.clear()
+            if not processed:
                 self.wake.wait(0.5)
                 self.wake.clear()
 
@@ -260,6 +289,7 @@ class Service:
                 doc = record(document)
             try:
                 if kind == "delete":
+                    revalidate = None
                     self.index.delete_document(doc["workspace_id"], doc["id"])
                     if not self.postgres:
                         self.files.delete(doc["storage_key"])
@@ -269,6 +299,8 @@ class Service:
                         for generation in session.scalars(
                             select(IndexGeneration).where(IndexGeneration.workspace_id == doc["workspace_id"])
                         ):
+                            if generation.active and generation.error:
+                                revalidate = generation
                             if doc["id"] in generation.checkpoint:
                                 generation.checkpoint = {
                                     key: value
@@ -277,6 +309,8 @@ class Service:
                                 }
                                 generation.progress = generation.total = len(generation.checkpoint)
                         session.delete(session.get(Document, doc["id"]))
+                    if revalidate is not None:
+                        self.indexes.validate_active(revalidate)
                     return True
                 generation = self.indexes.ensure(doc["workspace_id"])
                 embeddings, index = self.indexes.adapters_for(generation)
@@ -298,6 +332,8 @@ class Service:
                     active = session.get(type(generation), generation.id)
                     active.checkpoint = {**active.checkpoint, doc["id"]: document.version_id}
                     active.progress = active.total = len(active.checkpoint)
+                if generation.error:
+                    self.indexes.validate_active(generation)
             except Exception as error:
                 state = "needs_ocr" if isinstance(error, NeedsOCR) else "failed"
                 # Provider/library exceptions may contain credentials/paths: expose only known validation errors.
@@ -361,24 +397,7 @@ class Service:
                 )
         index.clear_document(doc["workspace_id"], doc["id"])
         for offset in range(0, len(chunks), 32):
-            batch = chunks[offset : offset + 32]
-            vectors = embeddings.embed([c.text for c in batch])
-            index.upsert(
-                [
-                    {
-                        "id": c.id,
-                        "text": c.text,
-                        "metadata": {
-                            "workspace_id": c.workspace_id,
-                            "document_id": c.document_id,
-                            "version_id": c.version_id,
-                            "fingerprint": c.fingerprint,
-                        },
-                    }
-                    for c in batch
-                ],
-                vectors,
-            )
+            self.upsert_chunks(index, embeddings, chunks[offset : offset + 32])
         with self.sessions.begin() as session:
             keep = {c.id for c in chunks}
             for old in session.scalars(
@@ -395,6 +414,25 @@ class Service:
             session.flush()
             for chunk in chunks:
                 session.merge(chunk)
+
+    @staticmethod
+    def upsert_chunks(index, embeddings, batch):
+        index.upsert(
+            [
+                {
+                    "id": c.id,
+                    "text": c.text,
+                    "metadata": {
+                        "workspace_id": c.workspace_id,
+                        "document_id": c.document_id,
+                        "version_id": c.version_id,
+                        "fingerprint": c.fingerprint,
+                    },
+                }
+                for c in batch
+            ],
+            embeddings.embed([c.text for c in batch]),
+        )
 
     def retrieve(self, session, workspace_id, question):
         results, _ = self.rag.search(session, workspace_id, question)
@@ -437,21 +475,34 @@ class Service:
         with self.lock, self.sessions() as session:
             self.repo.get(session, Chat, chat_id, workspace_id)
             provider = self.gateway.generator(session, workspace_id)
-            if hasattr(provider, "context_limit"):
-                options = options or self.rag.profile(session, workspace_id)
-                options = options.model_copy(
-                    update={"context_budget": min(options.context_budget, provider.context_limit(question))}
-                )
+            prompt_budget = getattr(provider, "prompt_budget", None)
+            if prompt_budget is not None:
                 provider.on_delta = on_delta if provider.config["streaming"] else None
                 provider.cancelled = cancelled
-            results, diagnostic = self.rag.search(session, workspace_id, question, filters, options, chat_id)
-            evidence = self.rag.evidence(results)
+            evidence, diagnostic = self.rag.search(
+                session, workspace_id, question, filters, options, chat_id, prompt_budget=prompt_budget
+            )
         general_chat = bool(actor and actor.guest and not evidence and not diagnostic["authorized_documents"])
-        answer = (
-            provider.generate(diagnostic["standalone_query"], evidence)
-            if evidence or general_chat
-            else ("I don't have enough evidence in the indexed documents to answer this question.")
-        )
+        standalone = diagnostic["standalone_query"]
+        counts = diagnostic.get("prompt_budget", {})
+        if prompt_budget is not None:
+            counts.update(prompt_budget.counts(question, standalone, evidence, general_chat))
+        if evidence or general_chat:
+            answer = provider.generate(standalone, evidence)
+        elif counts.get("prompt_budget_skips"):
+            answer = (
+                "I don't have enough evidence to answer. No complete matching passage fits within both the "
+                "source limit and the model's remaining input budget. Lower the output limit or use a larger "
+                "supported model window."
+            )
+        elif counts.get("source_budget_skips"):
+            answer = (
+                f"I don't have enough evidence to answer. No complete matching passage fits the "
+                f"{counts['source_limit_bytes']}-byte source limit. Increase the source budget in the "
+                "retrieval settings or model configuration."
+            )
+        else:
+            answer = "I don't have enough evidence in the indexed documents to answer this question."
         if cancelled and cancelled.is_set():
             from .provider_transport import GenerationCancelled
 

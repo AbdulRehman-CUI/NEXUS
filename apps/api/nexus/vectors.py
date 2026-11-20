@@ -70,8 +70,8 @@ class ChromaIndex:
     def ids(self, workspace_id):
         return self.collection.get(where={"workspace_id": workspace_id}, include=[])["ids"]
 
-    def clear_document(self, workspace_id, document_id):
-        self.collection.delete(where={"$and": [{"workspace_id": workspace_id}, {"document_id": document_id}]})
+    def clear_document(self, workspace_id, document_id, ids=None):
+        self.collection.delete(ids=ids, where={"$and": [{"workspace_id": workspace_id}, {"document_id": document_id}]})
 
     def upsert(self, chunks, embeddings):
         from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
@@ -172,11 +172,12 @@ class PostgresIndex:
         with self.sessions() as session:
             return list(session.scalars(self.scoped(select(StoredVector.chunk_id), workspace_id)))
 
-    def clear_document(self, workspace_id, document_id):
+    def clear_document(self, workspace_id, document_id, ids=None):
+        statement = self.scoped(delete(StoredVector), workspace_id).where(StoredVector.document_id == document_id)
+        if ids is not None:
+            statement = statement.where(StoredVector.chunk_id.in_(ids))
         with self.sessions.begin() as session:
-            session.execute(
-                self.scoped(delete(StoredVector), workspace_id).where(StoredVector.document_id == document_id)
-            )
+            session.execute(statement)
 
     def delete_document(self, workspace_id, document_id):
         with self.sessions.begin() as session:

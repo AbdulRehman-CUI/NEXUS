@@ -266,8 +266,8 @@ class PostgresIndex:
     def ids(self, workspace_id):
         return self.collection.get(where={"workspace_id": workspace_id}, include=[])["ids"]
 
-    def clear_document(self, workspace_id, document_id):
-        self.collection.delete(where={"$and": [{"workspace_id": workspace_id}, {"document_id": document_id}]})
+    def clear_document(self, workspace_id, document_id, ids=None):
+        self.collection.delete(ids=ids, where={"$and": [{"workspace_id": workspace_id}, {"document_id": document_id}]})
 
     def get_collection(self, name):
         return Collection(self.engine, name)

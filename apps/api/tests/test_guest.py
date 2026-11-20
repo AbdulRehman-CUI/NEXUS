@@ -13,9 +13,9 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from test_byok import KEY, MASTER, ROOT, mock_http, payload
 
-from nexus.auth import GUEST_COOKIE, add_user, token_hash
+from nexus.auth import GUEST_COOKIE, add_user, system_scope, token_hash
 from nexus.config import Settings
-from nexus.database import GuestSession, ProviderConfiguration, Workspace
+from nexus.database import Chunk, Document, GuestSession, Job, ProviderConfiguration, Workspace
 from nexus.main import create_app
 
 ORIGIN = "https://testserver"
@@ -89,6 +89,37 @@ def workspace(client):
     spaces = client.get("/api/workspaces").json()
     assert len(spaces) == 1
     return spaces[0]["id"]
+
+
+def test_interrupted_reindex_restores_committed_vectors_only(guest_apps):
+    app, _ = guest_apps
+    svc = app.state.service
+    client = browser(app)
+    bootstrap(client)
+    w = workspace(client)
+    item = upload(client, w)
+    doc = item["document"]["id"]
+    ready(client, w, doc)
+    # Persist the state of a failed reindex: one committed vector missing and one unpublished vector.
+    with svc.lock, system_scope():
+        active = svc.indexes.ensure(w)
+        embeddings, index = svc.indexes.adapters_for(active)
+        with svc.sessions.begin() as session:
+            expected = sorted(session.scalars(select(Chunk.id).where(Chunk.workspace_id == w)))
+            session.get(Document, doc).status = "failed"
+            session.get(Job, item["job_id"]).status = "failed"
+        index.clear_document(w, doc)
+        index.upsert(
+            [{"id": "unpublished", "text": "partial", "metadata": {
+                "workspace_id": w, "document_id": doc, "version_id": item["document"]["version_id"],
+                "fingerprint": active.fingerprint,
+            }}], embeddings.embed(["partial"]),
+        )
+        svc.indexes.startup()
+        assert sorted(index.ids(w)) == expected
+        assert not svc.indexes.ensure(w).error
+    response = client.post(f"/api/workspaces/{w}/search", json={"query": "Aurora"})
+    assert response.is_success and not response.json()["results"]
 
 
 def test_disabled_guest_access_returns_configuration_error(tmp_path):

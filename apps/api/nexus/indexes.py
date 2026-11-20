@@ -5,8 +5,12 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from .contracts import IndexConfiguration
-from .database import Chunk, Document, IndexGeneration, Workspace, uid
+from .database import Chunk, Document, IndexGeneration, Job, Workspace, uid
 from .providers import embedding_provider
+
+INTEGRITY_ERROR = (
+    "Active index integrity check failed. Build a replacement from original sources or restore a verified backup."
+)
 
 
 class IndexManager:
@@ -132,27 +136,50 @@ class IndexManager:
                 generation.status = "building"
         for workspace_id in workspaces:
             active = self.ensure(workspace_id)
-            try:
-                _, active_index = self.adapters_for(active)
-                with self.service.sessions() as session:
-                    expected = set(
-                        session.scalars(
-                            select(Chunk.id).where(
-                                Chunk.workspace_id == workspace_id, Chunk.fingerprint == active.fingerprint
-                            )
-                        )
-                    )
-                actual = set(active_index.ids(workspace_id))
-                if expected != actual:
-                    raise ValueError("Active vector/SQL coverage mismatch")
-            except Exception as error:
-                with self.service.sessions.begin() as session:
-                    session.get(
-                        IndexGeneration, active.id
-                    ).error = "Active index integrity check failed. Build a replacement from original sources or restore a verified backup."
-                self.service.log_failure("active_index_integrity", active.id, error)
+            self.validate_active(active)
             if active.configuration != self.desired(workspace_id).model_dump():
                 self.rebuild(workspace_id, self.desired(workspace_id))
+
+    def validate_active(self, active):
+        workspace_id = active.workspace_id
+        try:
+            embeddings, index = self.adapters_for(active)
+            with self.service.sessions() as session:
+                chunks = select(Chunk).where(
+                    Chunk.workspace_id == workspace_id, Chunk.fingerprint == active.fingerprint
+                )
+                expected = set(session.scalars(chunks.with_only_columns(Chunk.id)))
+                actual = set(index.ids(workspace_id))
+                if actual != expected:
+                    # Only a started, unpublished ingestion may have written outside the SQL commit.
+                    interrupted = set(session.scalars(
+                        select(Document.id).join(Job, Job.document_id == Document.id).where(
+                            Document.workspace_id == workspace_id,
+                            Document.status.in_(["processing", "failed", "queued", "needs_ocr"]),
+                            Job.workspace_id == workspace_id, Job.kind == "index", Job.attempts > 0,
+                            Job.status.in_(["processing", "failed", "queued", "cancelled", "needs_ocr"]),
+                        )
+                    ))
+                    extra = sorted(actual - expected)
+                    for doc_id in interrupted:
+                        for offset in range(0, len(extra), 500):
+                            index.clear_document(workspace_id, doc_id, ids=extra[offset:offset + 500])
+                    missing = sorted(expected - actual)
+                    for offset in range(0, len(missing), 32):
+                        rows = session.scalars(chunks.where(Chunk.id.in_(missing[offset:offset + 32])))
+                        batch = [row for row in rows if row.document_id in interrupted]
+                        if batch:
+                            self.service.upsert_chunks(index, embeddings, batch)
+                    if set(index.ids(workspace_id)) != expected:
+                        raise ValueError("Active vector/SQL coverage mismatch")
+        except Exception as error:
+            with self.service.sessions.begin() as session:
+                session.get(IndexGeneration, active.id).error = INTEGRITY_ERROR
+            self.service.log_failure("active_index_integrity", active.id, error)
+        else:
+            if active.error == INTEGRITY_ERROR:
+                with self.service.sessions.begin() as session:
+                    session.get(IndexGeneration, active.id).error = None
 
     def rebuild(self, workspace_id, config):
         self.ensure(workspace_id)

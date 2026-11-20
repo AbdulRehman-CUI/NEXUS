@@ -26,6 +26,8 @@ PHASE_2_REPORT.md
 PHASE_3_REPORT.md
 CHANGELOG.md
 docs
+NEXUS_BUG_AUDIT_REPORT.md
+NEXUS_HIGH_SEVERITY_FIX_REPORT.md
 
 # Package staged during the hosted API build.
 deploy/api/nexus/

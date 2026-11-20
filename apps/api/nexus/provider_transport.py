@@ -10,7 +10,8 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import httpx
 
 from .gateway import ENDPOINTS, destination
-from .providers import SYSTEM_PROMPT, ProviderError
+from .prompt_budget import PromptBudget
+from .providers import ProviderError
 
 BASES = {**ENDPOINTS, "openrouter": "https://openrouter.ai/api/v1"}
 PROVIDERS = [
@@ -64,6 +65,28 @@ class GenerationCancelled(ProviderFailure):
     def __init__(self):
         super().__init__(
             "cancelled", "Response stopped; the provider may still account for partial usage.", 409
+        )
+
+
+def check_context_error(error):
+    if isinstance(error, dict):
+        code = error.get("code") or error.get("type")
+        message = error.get("message")
+    else:
+        code, message = None, error
+    message = message.lower() if isinstance(message, str) else ""
+    if (
+        code in ("context_length_exceeded", "context_window_exceeded")
+        or "maximum context length" in message
+        or "prompt is too long" in message
+        or "prompt is too large" in message
+        or ("input token count" in message and "exceed" in message)
+    ):
+        raise ProviderFailure(
+            "context_length_exceeded",
+            "The provider rejected the request at its context limit. Check the model's configured window, "
+            "reduce the output limit, or shorten the question.",
+            422,
         )
 
 
@@ -171,19 +194,22 @@ class ProviderTransport:
         }.get(
             status, ("provider_unavailable", "Provider request failed. Check its status and model settings.")
         )
-        if status == 429:
-            # Some providers distinguish exhausted credit from a temporary rate limit by code.
-            # Inspect only a small body and return fixed messages, never provider text.
+        if status in (400, 413, 422, 429):
+            # Classify bounded error details locally. Only fixed messages leave the adapter.
             raw = bytearray()
-            for part in response.iter_bytes():
+            for part in response.iter_bytes(chunk_size=4096):
                 raw.extend(part)
                 if len(raw) > 16384:
                     break
             try:
                 data = json.loads(raw) if len(raw) <= 16384 else {}
                 error = data.get("error") if isinstance(data, dict) else None
+                if status != 429:
+                    check_context_error(error)
                 marker = (error.get("code") or error.get("type")) if isinstance(error, dict) else None
-                if marker in {"insufficient_quota", "quota_exceeded", "billing_hard_limit_reached"}:
+                if status == 429 and marker in (
+                    "insufficient_quota", "quota_exceeded", "billing_hard_limit_reached"
+                ):
                     code, message = (
                         "insufficient_quota",
                         "Provider quota or credit is exhausted. Check your provider account before retrying.",
@@ -348,11 +374,9 @@ class ProviderTransport:
 
     def payload(self, question, evidence, stream):
         c, p = self.config, self.provider
-        system = SYSTEM_PROMPT
-        content = json.dumps({"question": question, "evidence": evidence}, ensure_ascii=False)
-        if c.get("general_chat"):
-            system = "Answer the user's question directly. No documents or tools are available. Do not fabricate citations."
-            content = question
+        system, content = PromptBudget(c, self.metadata).checked_parts(
+            question, evidence, c.get("general_chat", False)
+        )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
         temperature = c.get("temperature")
         if temperature is not None and not temperature_supported(p, c["model"], self.metadata):
@@ -429,6 +453,8 @@ class ProviderTransport:
 
     def parse(self, data, streaming):
         if not isinstance(data, dict) or data.get("error") or data.get("type") == "error":
+            if isinstance(data, dict):
+                check_context_error(data.get("error"))
             raise ProviderFailure(
                 "provider_unavailable", "Provider interrupted the response. No fallback was used."
             )

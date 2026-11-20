@@ -264,6 +264,7 @@ def selection(workspace_id: str, request: Request):
         return {
             "active": svc.byok.public(row) if row and not row.deleted else None,
             "unavailable": bool(row and row.deleted),
+            "chat_model": svc.gateway.chat_model(session, workspace_id),
             "selection": chosen.configuration_id if chosen else "default",
             "workspace_cloud_allowed": workspace.cloud_opt_in,
             "configurations": [

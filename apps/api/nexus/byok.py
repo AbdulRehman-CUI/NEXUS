@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from .auth import principal
 from .database import GuestSession, ProviderConfiguration, ProviderSelection, ProviderUsage, now, uid
 from .gateway import is_remote
+from .prompt_budget import PromptBudget
 from .provider_transport import (
     GenerationCancelled,
     ProviderFailure,
@@ -24,7 +25,6 @@ from .provider_transport import (
     base_url,
     temperature_supported,
 )
-from .providers import SYSTEM_PROMPT
 
 
 def owner_id(settings):
@@ -297,22 +297,8 @@ class PersonalGenerator:
         self.identifier, self.owner, self.revision = row.id, row.owner, row.revision
         self.config, self.name = dict(row.configuration), row.configuration["provider"]
         self.metadata = next((m for m in row.models if m["id"] == self.config["model"]), {})
+        self.prompt_budget = PromptBudget(self.config, self.metadata)
         self.on_delta = self.cancelled = None
-
-    def context_limit(self, question):
-        window = min(self.config["context_window"], self.metadata.get("context_window") or 2_000_000)
-        if self.config["max_output_tokens"] > (self.metadata.get("max_output_tokens") or 32768):
-            raise HTTPException(422, "Output limit exceeds this model's advertised maximum.")
-        # Conservative byte budget; never pretend a universal character/token ratio is exact.
-        overhead = len(SYSTEM_PROMPT.encode()) + len(question.encode()) + 1500
-        available = min(
-            self.config["context_budget_bytes"], window - self.config["max_output_tokens"] - overhead
-        )
-        if available < 200:
-            raise HTTPException(
-                422, "The model context window is too small for this question and output limit."
-            )
-        return available
 
     def generate(self, question, evidence):
         svc, store = self.store.service, self.store
@@ -335,16 +321,9 @@ class PersonalGenerator:
             )
             if calls >= self.config["max_calls_per_day"]:
                 raise HTTPException(429, "Personal model daily call limit reached. No provider was called.")
-            # Check the complete serialized grounded prompt, including generated locator IDs.
-            window = min(self.config["context_window"], self.metadata.get("context_window") or 2_000_000)
-            prompt_bytes = len(SYSTEM_PROMPT.encode()) + len(
-                json.dumps({"question": question, "evidence": evidence}, ensure_ascii=False).encode()
-            )
-            if prompt_bytes + self.config["max_output_tokens"] + 256 > window:
-                raise HTTPException(
-                    422,
-                    "Grounded prompt exceeds this model's conservative context budget. Reduce retrieval/output limits.",
-                )
+            actor = principal.get()
+            general_chat = bool(actor and actor.guest and not evidence)
+            self.prompt_budget.checked_parts(question, evidence, general_chat)
             event = ProviderUsage(
                 owner=self.owner,
                 configuration_id=row.id,
@@ -357,8 +336,7 @@ class PersonalGenerator:
             session.flush()
             event_id = event.id
             adapter = store.transport(row, self.cancelled)
-            actor = principal.get()
-            adapter.config["general_chat"] = bool(actor and actor.guest and not evidence)
+            adapter.config["general_chat"] = general_chat
         started, status, answer = time.perf_counter(), "failed", ""
         try:
             answer = adapter.generate(question, evidence, self.on_delta)
